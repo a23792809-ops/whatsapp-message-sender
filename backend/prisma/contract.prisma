@@ -1,0 +1,70 @@
+// use prisma-8
+
+model Customer {
+  id          String   @id @default(cuid(2))
+  mobile      String
+  name        String
+  template    String?
+  variables   String?
+  status      String   @default("PENDING")
+  lastAttempt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   temporal.updatedAt()
+
+  messages Message[]
+
+  @@index([mobile])
+  @@index([status])
+}
+
+model Campaign {
+  id         String   @id @default(cuid(2))
+  name       String
+  status     String   @default("DRAFT")
+  templateId String?
+  throttleMs Int      @default(19000)
+  total      Int      @default(0)
+  sent       Int      @default(0)
+  failed     Int      @default(0)
+  pending    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  temporal.updatedAt()
+
+  messages Message[]
+}
+
+model Message {
+  id            String    @id @default(cuid(2))
+  customerId    String
+  campaignId    String?
+  mobile        String
+  customerName  String
+  content       String
+  status        String    @default("PENDING")
+  whatsappId    String?
+  error         String?
+  attemptCount  Int       @default(0)
+  sentAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  customer Customer  @relation(fields: [customerId], references: [id])
+  campaign Campaign? @relation(fields: [campaignId], references: [id])
+
+  @@index([customerId])
+  @@index([campaignId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model MessageTemplate {
+  id          String   @id @default(cuid(2))
+  name        String   @unique
+  body        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   temporal.updatedAt()
+
+  @@index([name])
+  @@index([isActive])
+}

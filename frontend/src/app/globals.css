@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #212529;
+
+  /* Bharat Gas Brand Palette */
+  --bharat-blue: #007bc9;
+  --bharat-yellow: #ffdc02;
+  --charcoal: #212529;
+
+  --border: #e2e8f0;
+  --muted: #64748b;
+  --muted-bg: #f1f5f9;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* ===== Bharat Blue scale (#007BC9 base) ===== */
+  --color-blue-50: #eff7fc;
+  --color-blue-100: #d9edf9;
+  --color-blue-200: #b3daf1;
+  --color-blue-300: #7fc3e6;
+  --color-blue-400: #45a6d8;
+  --color-blue-500: #0f8fd0;
+  --color-blue-600: #007bc9;
+  --color-blue-700: #0066a8;
+  --color-blue-800: #005586;
+  --color-blue-900: #004466;
+  --color-blue-950: #00304a;
+
+  /* sky -> Bharat Blue (info accents) */
+  --color-sky-50: #eff7fc;
+  --color-sky-100: #d9edf9;
+  --color-sky-200: #b3daf1;
+  --color-sky-300: #7fc3e6;
+  --color-sky-400: #45a6d8;
+  --color-sky-500: #0f8fd0;
+  --color-sky-600: #007bc9;
+  --color-sky-700: #0066a8;
+  --color-sky-800: #005586;
+  --color-sky-900: #004466;
+  --color-sky-950: #00304a;
+
+  /* orange -> Bharat Blue (remapped legacy primary accent) */
+  --color-orange-50: #eff7fc;
+  --color-orange-100: #d9edf9;
+  --color-orange-200: #b3daf1;
+  --color-orange-300: #7fc3e6;
+  --color-orange-400: #45a6d8;
+  --color-orange-500: #0f8fd0;
+  --color-orange-600: #007bc9;
+  --color-orange-700: #0066a8;
+  --color-orange-800: #005586;
+  --color-orange-900: #004466;
+  --color-orange-950: #00304a;
+
+  /* amber -> Bharat Yellow (#FFDC02 base) */
+  --color-amber-50: #fffbda;
+  --color-amber-100: #fff6b0;
+  --color-amber-200: #ffef7c;
+  --color-amber-300: #ffe84d;
+  --color-amber-400: #ffe326;
+  --color-amber-500: #ffdc02;
+  --color-amber-600: #e6c800;
+  --color-amber-700: #bfa900;
+  --color-amber-800: #998a00;
+  --color-amber-900: #736600;
+  --color-amber-950: #4d4400;
+
+  /* yellow -> Bharat Yellow (standard highlight accent) */
+  --color-yellow-50: #fffbda;
+  --color-yellow-100: #fff6b0;
+  --color-yellow-200: #ffef7c;
+  --color-yellow-300: #ffe84d;
+  --color-yellow-400: #ffe326;
+  --color-yellow-500: #ffdc02;
+  --color-yellow-600: #e6c800;
+  --color-yellow-700: #bfa900;
+  --color-yellow-800: #998a00;
+  --color-yellow-900: #736600;
+  --color-yellow-950: #4d4400;
+
+  /* Comfortable, readable typography scale */
+  --text-xs: 0.8125rem; /* 13px */
+  --text-sm: 0.9375rem; /* 15px */
+}
+
+body {
+  background-color: #ffffff;
+  color: #212529;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

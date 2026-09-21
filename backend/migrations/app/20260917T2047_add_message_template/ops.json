@@ -1,0 +1,161 @@
+[
+  {
+    "id": "table.messageTemplate",
+    "label": "Create table \"messageTemplate\"",
+    "summary": "Creates table \"messageTemplate\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "table",
+        "name": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure table \"messageTemplate\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create table \"messageTemplate\"",
+        "sql": "CREATE TABLE \"public\".\"messageTemplate\" (\n  \"body\" text NOT NULL,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"description\" text,\n  \"id\" text NOT NULL,\n  \"isActive\" bool DEFAULT true NOT NULL,\n  \"name\" text NOT NULL,\n  \"updatedAt\" timestamptz NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify table \"messageTemplate\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "unique.messageTemplate.messageTemplate_name_key",
+    "label": "Add unique constraint on \"messageTemplate\" (name)",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "unique",
+        "name": "messageTemplate_name_key",
+        "table": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure constraint \"messageTemplate_name_key\" does not exist",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "messageTemplate_name_key",
+          "public",
+          "\"public\".\"messageTemplate\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add unique constraint \"messageTemplate_name_key\"",
+        "sql": "ALTER TABLE \"public\".\"messageTemplate\" ADD CONSTRAINT \"messageTemplate_name_key\" UNIQUE (\"name\")"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify constraint \"messageTemplate_name_key\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
+        "params": [
+          "messageTemplate_name_key",
+          "public",
+          "\"public\".\"messageTemplate\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.messageTemplate.messageTemplate_isActive_idx_77fe3ba1",
+    "label": "Create index \"messageTemplate_isActive_idx_77fe3ba1\" on \"messageTemplate\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "messageTemplate_isActive_idx_77fe3ba1",
+        "table": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"messageTemplate_isActive_idx_77fe3ba1\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate_isActive_idx_77fe3ba1\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"messageTemplate_isActive_idx_77fe3ba1\"",
+        "sql": "CREATE INDEX \"messageTemplate_isActive_idx_77fe3ba1\" ON \"public\".\"messageTemplate\" (\"isActive\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"messageTemplate_isActive_idx_77fe3ba1\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate_isActive_idx_77fe3ba1\""
+        ]
+      }
+    ]
+  },
+  {
+    "id": "index.messageTemplate.messageTemplate_name_idx_ce87e6ba",
+    "label": "Create index \"messageTemplate_name_idx_ce87e6ba\" on \"messageTemplate\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "index",
+        "name": "messageTemplate_name_idx_ce87e6ba",
+        "table": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure index \"messageTemplate_name_idx_ce87e6ba\" does not exist",
+        "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate_name_idx_ce87e6ba\""
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "create index \"messageTemplate_name_idx_ce87e6ba\"",
+        "sql": "CREATE INDEX \"messageTemplate_name_idx_ce87e6ba\" ON \"public\".\"messageTemplate\" (\"name\")",
+        "params": []
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify index \"messageTemplate_name_idx_ce87e6ba\" exists",
+        "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
+        "params": [
+          "\"public\".\"messageTemplate_name_idx_ce87e6ba\""
+        ]
+      }
+    ]
+  }
+]
