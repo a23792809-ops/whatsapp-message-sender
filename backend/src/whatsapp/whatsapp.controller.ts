@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
+import { TestSendDto } from '../common/dto.js';
 import { WhatsAppService } from './whatsapp.service.js';
 
 @Controller('whatsapp')
@@ -11,8 +12,7 @@ export class WhatsAppController {
   }
 
   @Post('test')
-  async test(@Body() body: { to: string; message: string }) {
-    if (!body?.to) return { ok: false, error: 'to is required' };
+  async test(@Body() body: TestSendDto) {
     return this.wa.sendText(body.to, body.message || 'Test message from WhatsApp Sender');
   }
 }

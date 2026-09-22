@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { CreateCampaignDto } from '../common/dto.js';
 import { CampaignsService } from './campaigns.service.js';
 
 @Controller('campaigns')
@@ -6,7 +7,7 @@ export class CampaignsController {
   constructor(private readonly campaigns: CampaignsService) {}
 
   @Post()
-  create(@Body() body: { name: string; templateId: string; customerIds: string[]; throttleMs?: number }) {
+  create(@Body() body: CreateCampaignDto) {
     return this.campaigns.create(body);
   }
 

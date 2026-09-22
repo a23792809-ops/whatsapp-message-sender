@@ -1,0 +1,170 @@
+[
+  {
+    "id": "column.public.campaign.templateId",
+    "label": "Add column \"templateId\" to \"campaign\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "templateId",
+        "table": "campaign"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"templateId\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "campaign",
+          "templateId"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"templateId\"",
+        "sql": "ALTER TABLE \"public\".\"campaign\" ADD COLUMN \"templateId\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"templateId\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "campaign",
+          "templateId"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.campaign.throttleMs",
+    "label": "Add column \"throttleMs\" to \"campaign\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "throttleMs",
+        "table": "campaign"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"throttleMs\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "campaign",
+          "throttleMs"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"throttleMs\"",
+        "sql": "ALTER TABLE \"public\".\"campaign\" ADD COLUMN \"throttleMs\" int4 DEFAULT 19000 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"throttleMs\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "campaign",
+          "throttleMs"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.customer.variables",
+    "label": "Add column \"variables\" to \"customer\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "variables",
+        "table": "customer"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"variables\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "customer",
+          "variables"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"variables\"",
+        "sql": "ALTER TABLE \"public\".\"customer\" ADD COLUMN \"variables\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"variables\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "customer",
+          "variables"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.message.attemptCount",
+    "label": "Add column \"attemptCount\" to \"message\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "attemptCount",
+        "table": "message"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"attemptCount\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "message",
+          "attemptCount"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"attemptCount\"",
+        "sql": "ALTER TABLE \"public\".\"message\" ADD COLUMN \"attemptCount\" int4 DEFAULT 0 NOT NULL"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"attemptCount\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "message",
+          "attemptCount"
+        ]
+      }
+    ]
+  }
+]

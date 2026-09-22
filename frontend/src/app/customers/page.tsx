@@ -87,8 +87,11 @@ export default function CustomersPage() {
   }, [appliedSearch, statusFilter, page, pageSize]);
 
   useEffect(() => {
-    setLoading(true);
-    fetchCustomers();
+    const timer = setTimeout(() => {
+      setLoading(true);
+      fetchCustomers();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchCustomers]);
 
   const fetchTemplates = useCallback(async () => {
@@ -104,7 +107,10 @@ export default function CustomersPage() {
   }, []);
 
   useEffect(() => {
-    fetchTemplates();
+    const timer = setTimeout(() => {
+      fetchTemplates();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [fetchTemplates]);
 
   const handleRefresh = () => {
