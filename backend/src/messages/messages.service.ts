@@ -57,7 +57,7 @@ export class MessagesService {
     if (!customerId) throw new BadRequestException('customerId is required');
     if (!templateId) throw new BadRequestException('templateId is required');
 
-    const customers = await (await this.customerApi.all());
+    const customers = await this.customerApi.all();
     const customer = customers.find((c: any) => c.id === customerId);
     if (!customer) throw new NotFoundException(`Customer ${customerId} not found`);
 
