@@ -36,13 +36,13 @@ export class TemplatesService {
   }
 
   static render(body: string, values: Record<string, string>) {
-    const missing: string[] = [];
+    const missing = new Set<string>();
     const rendered = body.replace(new RegExp(VAR_REGEX), (_, key: string) => {
       const v = values[key];
-      if (v === undefined) { missing.push(key); return `{{${key}}}`; }
+      if (v === undefined) { missing.add(key); return `{{${key}}}`; }
       return v;
     });
-    return { rendered, missing };
+    return { rendered, missing: Array.from(missing) };
   }
 
   private async insertOne(values: Record<string, any>): Promise<any> {
