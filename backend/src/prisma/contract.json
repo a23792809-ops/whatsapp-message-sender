@@ -480,6 +480,20 @@
                   "kind": "scalar"
                 }
               },
+              "metaLanguage": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
+              "metaName": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "name": {
                 "nullable": false,
                 "type": {
@@ -512,6 +526,12 @@
                 },
                 "isActive": {
                   "column": "isActive"
+                },
+                "metaLanguage": {
+                  "column": "metaLanguage"
+                },
+                "metaName": {
+                  "column": "metaName"
                 },
                 "name": {
                   "column": "name"
@@ -895,6 +915,20 @@
                   "nativeType": "bool",
                   "nullable": false
                 },
+                "metaLanguage": {
+                  "codecId": "pg/text@1",
+                  "default": {
+                    "kind": "literal",
+                    "value": "en"
+                  },
+                  "nativeType": "text",
+                  "nullable": true
+                },
+                "metaName": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "name": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -944,7 +978,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "29fba39f18e7d72602e5f5f6c06b5f986d8611882e96d32ab4bacece2729e5f7"
+    "storageHash": "b84d0fa1cc8c20a547de64a5b9c5a255f469f8de3da25a6279cb5f07bd8caad3"
   },
   "execution": {
     "executionHash": "b423222a38f6f0ed7251e763b7ead583fb157a852f026b9b6666e7c912c7a6a2",

@@ -57,13 +57,15 @@ model Message {
 }
 
 model MessageTemplate {
-  id          String   @id @default(cuid(2))
-  name        String   @unique
-  body        String
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   temporal.updatedAt()
+  id           String   @id @default(cuid(2))
+  name         String   @unique
+  body         String
+  description  String?
+  isActive     Boolean  @default(true)
+  metaName     String?
+  metaLanguage String?  @default("en")
+  createdAt    DateTime @default(now())
+  updatedAt    temporal.updatedAt()
 
   @@index([name])
   @@index([isActive])

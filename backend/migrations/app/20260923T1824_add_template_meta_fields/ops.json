@@ -1,0 +1,86 @@
+[
+  {
+    "id": "column.public.messageTemplate.metaLanguage",
+    "label": "Add column \"metaLanguage\" to \"messageTemplate\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "metaLanguage",
+        "table": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"metaLanguage\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "messageTemplate",
+          "metaLanguage"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"metaLanguage\"",
+        "sql": "ALTER TABLE \"public\".\"messageTemplate\" ADD COLUMN \"metaLanguage\" text DEFAULT 'en'"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"metaLanguage\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "messageTemplate",
+          "metaLanguage"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "column.public.messageTemplate.metaName",
+    "label": "Add column \"metaName\" to \"messageTemplate\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres",
+      "details": {
+        "schema": "public",
+        "objectType": "column",
+        "name": "metaName",
+        "table": "messageTemplate"
+      }
+    },
+    "precheck": [
+      {
+        "description": "ensure column \"metaName\" is missing",
+        "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "messageTemplate",
+          "metaName"
+        ]
+      }
+    ],
+    "execute": [
+      {
+        "description": "add column \"metaName\"",
+        "sql": "ALTER TABLE \"public\".\"messageTemplate\" ADD COLUMN \"metaName\" text"
+      }
+    ],
+    "postcheck": [
+      {
+        "description": "verify column \"metaName\" exists",
+        "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"information_schema\".\"columns\" WHERE (\"table_schema\" = $1 AND \"table_name\" = $2 AND \"column_name\" = $3)) AS \"result\"",
+        "params": [
+          "public",
+          "messageTemplate",
+          "metaName"
+        ]
+      }
+    ]
+  }
+]
