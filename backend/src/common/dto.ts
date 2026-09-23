@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
@@ -6,10 +7,13 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
+
+const ISO_LANGUAGE_PATTERN = /^[a-z]{2,3}([-_][A-Z]{2,3})?$/;
 
 export class CreateTemplateDto {
   @IsString()
@@ -26,6 +30,16 @@ export class CreateTemplateDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  metaName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(ISO_LANGUAGE_PATTERN, { message: 'metaLanguage must be an ISO language code (e.g. en, hi)' })
+  metaLanguage?: string;
 }
 
 export class UpdateTemplateDto {
@@ -47,6 +61,16 @@ export class UpdateTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  metaName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(ISO_LANGUAGE_PATTERN, { message: 'metaLanguage must be an ISO language code (e.g. en, hi)' })
+  metaLanguage?: string;
 }
 
 export class PreviewTemplateDto {
@@ -90,9 +114,27 @@ export class SendMessageDto {
 export class TestSendDto {
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\+?[\d\s()-]{9,18}$/, { message: 'to must be a valid phone number' })
   to!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(8000)
   message?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  templateName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(ISO_LANGUAGE_PATTERN, { message: 'language must be an ISO language code (e.g. en, hi)' })
+  language?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  parameters?: string[];
 }

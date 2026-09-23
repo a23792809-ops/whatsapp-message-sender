@@ -13,6 +13,13 @@ export class WhatsAppController {
 
   @Post('test')
   async test(@Body() body: TestSendDto) {
+    if (body.templateName) {
+      return this.wa.sendTemplate(body.to, {
+        name: body.templateName,
+        language: body.language,
+        parameters: body.parameters,
+      });
+    }
     return this.wa.sendText(body.to, body.message || 'Test message from WhatsApp Sender');
   }
 }
