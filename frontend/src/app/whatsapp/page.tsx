@@ -28,6 +28,10 @@ export default function WhatsAppPage() {
   const [testMessage, setTestMessage] = useState(
     'Namaste! This is an official test message from Alibag Bharat Gas Agency via WhatsApp Cloud API.'
   );
+  const [sendAsTemplate, setSendAsTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateLanguage, setTemplateLanguage] = useState('en');
+  const [templateParams, setTemplateParams] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -87,7 +91,17 @@ export default function WhatsAppPage() {
     try {
       setSendingTest(true);
       setTestResult(null);
-      const res = await api.whatsapp.test(testMobile.trim(), testMessage.trim());
+      const template = sendAsTemplate && templateName.trim()
+        ? {
+            name: templateName.trim(),
+            language: templateLanguage.trim() || 'en',
+            parameters: templateParams
+              .split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
+          }
+        : undefined;
+      const res = await api.whatsapp.test(testMobile.trim(), testMessage.trim(), template);
       setTestResult(res);
     } catch (err: unknown) {
       setTestResult({
@@ -294,6 +308,58 @@ export default function WhatsAppPage() {
                       onChange={(e) => setTestMessage(e.target.value)}
                       className="w-full font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-900 leading-relaxed"
                     />
+                  </div>
+
+                  {/* Optional Approved Meta Template Send */}
+                  <div className="border-t border-dashed border-slate-200 pt-4">
+                    <label className="flex items-center gap-2 text-xs font-bold text-[#212529] uppercase tracking-wider mb-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={sendAsTemplate}
+                        onChange={(e) => setSendAsTemplate(e.target.checked)}
+                        className="accent-[#007BC9] h-4 w-4"
+                      />
+                      Send as Approved Meta Template
+                    </label>
+                    {sendAsTemplate && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Meta Template Name
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="bharat_gas_delivery"
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                            className="w-full font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Template Language
+                          </label>
+                          <input
+                            type="text"
+                            value={templateLanguage}
+                            onChange={(e) => setTemplateLanguage(e.target.value)}
+                            className="w-full font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-900"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            Body Parameters (comma-separated, matching the Meta template order)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Raheem Shaikh, REF-2026-0901"
+                            value={templateParams}
+                            onChange={(e) => setTemplateParams(e.target.value)}
+                            className="w-full font-mono text-sm bg-slate-50 border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 text-slate-900"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Test Execution Result */}

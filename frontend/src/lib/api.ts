@@ -64,6 +64,7 @@ export interface WhatsAppStatusResponse {
   apiVersion: string;
   phoneNumberId: string;
   accessToken?: string;
+  countryCode?: string;
 }
 
 export interface TemplateSummary {
@@ -72,6 +73,8 @@ export interface TemplateSummary {
   body: string;
   description?: string | null;
   isActive?: boolean;
+  metaName?: string | null;
+  metaLanguage?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -196,6 +199,15 @@ export interface SingleSendResponse {
   error?: string;
   renderedPreview?: string;
   missingVariables?: string[];
+  meta?: { template?: string; language?: string; parameterCount?: number };
+}
+
+export interface WhatsAppTestRequest {
+  ok: boolean;
+  mode?: string;
+  whatsappId?: string;
+  error?: string;
+  meta?: { template?: string; language?: string; parameterCount?: number };
 }
 
 function withQuery(endpoint: string, params?: Record<string, string | number | undefined>): string {
@@ -254,11 +266,17 @@ export const api = {
 
   whatsapp: {
     status: () => api.get<WhatsAppStatusResponse>('/whatsapp/status'),
-    test: (to: string, message: string) =>
-      api.post<{ ok: boolean; mode?: string; whatsappId?: string; error?: string }>('/whatsapp/test', {
-        to,
-        message,
-      }),
+    test: (
+      to: string,
+      message: string,
+      template?: { name?: string; language?: string; parameters?: string[] },
+    ) =>
+      api.post<WhatsAppTestRequest>(
+        '/whatsapp/test',
+        template?.name
+          ? { to, message, templateName: template.name, language: template.language, parameters: template.parameters ?? [] }
+          : { to, message },
+      ),
   },
 
   campaigns: {
