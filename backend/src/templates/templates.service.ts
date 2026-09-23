@@ -20,6 +20,21 @@ export class TemplatesService {
     return Array.from(set);
   }
 
+  static extractTemplateParameters(body: string, values: Record<string, string>): string[] {
+    const seen = new Set<string>();
+    const params: string[] = [];
+    const re = new RegExp(VAR_REGEX);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body)) !== null) {
+      const key = m[1];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const value = values[key];
+      if (value !== undefined) params.push(value);
+    }
+    return params;
+  }
+
   static render(body: string, values: Record<string, string>) {
     const missing: string[] = [];
     const rendered = body.replace(new RegExp(VAR_REGEX), (_, key: string) => {
@@ -81,7 +96,7 @@ export class TemplatesService {
     throw new Error('All update strategies failed');
   }
 
-  async create(dto: { name: string; body: string; description?: string }) {
+  async create(dto: { name: string; body: string; description?: string; metaName?: string | null; metaLanguage?: string | null }) {
     if (!dto?.name?.trim()) throw new BadRequestException('name is required');
     if (!dto?.body?.trim()) throw new BadRequestException('body is required');
 
@@ -95,6 +110,8 @@ export class TemplatesService {
         name: dto.name.trim(),
         body: dto.body,
         description: dto.description ?? null,
+        metaName: dto.metaName ?? null,
+        metaLanguage: dto.metaLanguage ?? 'en',
       });
     } catch (e) {
       throw new BadRequestException('Create failed: ' + (e as Error).message);
@@ -126,6 +143,8 @@ export class TemplatesService {
     if (dto.body !== undefined) values.body = dto.body;
     if (dto.description !== undefined) values.description = dto.description;
     if (dto.isActive !== undefined) values.isActive = dto.isActive;
+    if (dto.metaName !== undefined) values.metaName = dto.metaName;
+    if (dto.metaLanguage !== undefined) values.metaLanguage = dto.metaLanguage;
 
     try {
       const updated = await this.updateOne(id, values);

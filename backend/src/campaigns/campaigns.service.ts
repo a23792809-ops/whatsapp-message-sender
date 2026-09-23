@@ -307,7 +307,13 @@ export class CampaignsService {
         content: rendered,
       });
 
-      const result = await this.wa.sendText(msg.mobile, rendered);
+      const result = tpl.metaName
+        ? await this.wa.sendTemplate(msg.mobile, {
+            name: tpl.metaName,
+            language: tpl.metaLanguage || 'en',
+            parameters: TemplatesService.extractTemplateParameters(tpl.body, values),
+          })
+        : await this.wa.sendText(msg.mobile, rendered);
       const newAttemptCount = (msg.attemptCount || 0) + 1;
 
       if (result.ok) {
