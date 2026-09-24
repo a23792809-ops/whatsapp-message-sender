@@ -10,6 +10,7 @@ type EngineState = {
 };
 
 const RUNNABLE_STATUSES = ['DRAFT', 'QUEUED', 'PAUSED'];
+const MAX_ATTEMPTS = 3;
 
 @Injectable()
 export class CampaignsService {
@@ -30,6 +31,61 @@ export class CampaignsService {
   }
   private get customerApi(): any {
     return (this.prisma.client as any).orm?.public?.Customer;
+  }
+
+  async onApplicationBootstrap() {
+    try {
+      const result = await this.recoverRunning();
+      if (result.recovered.length > 0) {
+        this.logger.log(`Recovered campaign runner(s): ${result.recovered.join(', ')}`);
+      }
+    } catch (e) {
+      this.logger.error(`Campaign recovery failed: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Claim a live in-memory runner for a campaign. Synchronous so concurrent
+   * start/resume/recovery calls can never spawn two runners for the same id.
+   * Returns false when a runner is already active.
+   */
+  private claimRunner(id: string): boolean {
+    const existing = this.engines.get(id);
+    if (existing?.running) return false;
+    this.engines.set(id, { paused: false, stopped: false, running: true });
+    return true;
+  }
+
+  private launch(id: string) {
+    const state = this.engines.get(id);
+    if (!state) return;
+    void this.runLoop(id, state).catch((e) => {
+      this.logger.error(`Campaign ${id} loop crashed: ${(e as Error).message}`);
+    });
+  }
+
+  /**
+   * Pick up campaigns persisted as RUNNING before a restart and attach a
+   * runner to each one that does not already have a live runner. PAUSED and
+   * STOPPED campaigns are intentionally left untouched.
+   */
+  async recoverRunning(): Promise<{ recovered: string[]; skipped: string[] }> {
+    const api = this.campaignApi;
+    if (!api?.all) return { recovered: [], skipped: [] };
+    const all = await api.all();
+    const arr = Array.isArray(all) ? all : await all;
+    const recovered: string[] = [];
+    const skipped: string[] = [];
+    for (const c of arr) {
+      if (c.status !== 'RUNNING') continue;
+      if (this.claimRunner(c.id)) {
+        this.launch(c.id);
+        recovered.push(c.id);
+      } else {
+        skipped.push(c.id);
+      }
+    }
+    return { recovered, skipped };
   }
 
   private now(): any {
@@ -148,26 +204,31 @@ export class CampaignsService {
       throw new BadRequestException(`Cannot start campaign in status ${campaign.status}`);
     }
 
-    let state = this.engines.get(id);
-    if (state?.running) {
+    if (!this.claimRunner(id)) {
       throw new BadRequestException('Campaign is already running');
     }
-    state = { paused: false, stopped: false, running: true };
-    this.engines.set(id, state);
 
     await this.updateCampaign(id, { status: 'RUNNING' });
 
     // run in background, do not await
-    this.runLoop(id, state).catch((e) => {
-      this.logger.error(`Campaign ${id} loop crashed: ${(e as Error).message}`);
-    });
+    this.launch(id);
 
     return { ok: true, status: 'RUNNING' };
   }
 
   async pause(id: string) {
     const state = this.engines.get(id);
-    if (!state?.running) throw new BadRequestException('Campaign is not running');
+    if (!state || !state.running) {
+      // Reliability: a RUNNING campaign whose runner is no longer alive (e.g.
+      // it crashed after a restart) must still be pausable from the database.
+      const campaign = await this.findCampaign(id);
+      if (campaign?.status === 'RUNNING') {
+        this.engines.delete(id);
+        await this.updateCampaign(id, { status: 'PAUSED' });
+        return { ok: true, status: 'PAUSED' };
+      }
+      throw new BadRequestException('Campaign is not running');
+    }
     state.paused = true;
     await this.updateCampaign(id, { status: 'PAUSED' });
     return { ok: true, status: 'PAUSED' };
@@ -204,153 +265,166 @@ export class CampaignsService {
   }
 
   private async runLoop(campaignId: string, state: EngineState) {
-    const campaign = await this.getCampaignOrThrow(campaignId);
-    const tpl = await this.templates.getById(campaign.templateId);
-    const throttleMs = campaign.throttleMs || 19000;
-    const maxAttempts = 3;
+    try {
+      const campaign = await this.getCampaignOrThrow(campaignId);
+      const tpl = await this.templates.getById(campaign.templateId);
+      const throttleMs = campaign.throttleMs || 19000;
 
-    while (true) {
-      if (state.stopped) {
-        this.logger.log(`Campaign ${campaignId} stopped`);
-        break;
-      }
-      if (state.paused) {
-        this.logger.log(`Campaign ${campaignId} paused`);
-        state.running = false;
-        return;
-      }
-
-      const pending = await this.messagesFor(campaignId, 'PENDING');
-      if (pending.length === 0) {
-        await this.updateCampaign(campaignId, { status: 'COMPLETED' });
-        this.logger.log(`Campaign ${campaignId} completed`);
-        break;
-      }
-
-      const msg = pending[0];
-
-      // Build template variables from the customer record.
-      // The customer.variables field contains additional columns
-      // imported from the CSV/XLSX row as JSON.
-      const customer = await (async () => {
-        const all = await this.customerApi.all();
-        const arr = Array.isArray(all) ? all : await all;
-        return arr.find((c: any) => c.id === msg.customerId) ?? null;
-      })();
-
-      if (!customer) {
-        await this.updateMessage(msg.id, {
-          status: 'FAILED',
-          error: 'Customer record not found',
-          attemptCount: (msg.attemptCount || 0) + 1,
-        });
-
-        const c = await this.getCampaignOrThrow(campaignId);
-        await this.updateCampaign(campaignId, {
-          failed: (c.failed || 0) + 1,
-          pending: Math.max(0, (c.pending || 0) - 1),
-        });
-
-        continue;
-      }
-
-      const values: Record<string, string> = {
-        customer_name: msg.customerName,
-        mobile_no: msg.mobile,
-        mobile: msg.mobile,
-      };
-
-      // Merge imported custom variables.
-      if (customer.variables) {
-        try {
-          const custom = JSON.parse(customer.variables);
-          if (custom && typeof custom === 'object' && !Array.isArray(custom)) {
-            for (const [key, value] of Object.entries(custom)) {
-              if (value !== undefined && value !== null) {
-                values[key] = String(value);
-              }
-            }
-          }
-        } catch {
-          this.logger.warn(`Invalid customer.variables JSON for ${msg.customerId}`);
+      while (true) {
+        if (state.stopped) {
+          this.logger.log(`Campaign ${campaignId} stopped`);
+          break;
         }
-      }
+        if (state.paused) {
+          this.logger.log(`Campaign ${campaignId} paused`);
+          break;
+        }
 
-      const { rendered, missing } = TemplatesService.render(tpl.body, values);
+        const pending = await this.messagesFor(campaignId, 'PENDING');
+        if (pending.length === 0) {
+          const messages = await this.messagesFor(campaignId);
+          const sent = messages.filter((m: any) => m.status === 'SENT').length;
+          const failed = messages.filter((m: any) => m.status === 'FAILED').length;
+          const stillPending = messages.filter((m: any) => m.status === 'PENDING').length;
+          await this.updateCampaign(campaignId, {
+            status: 'COMPLETED',
+            sent,
+            failed,
+            pending: stillPending,
+          });
+          this.logger.log(`Campaign ${campaignId} completed`);
+          break;
+        }
 
-      // Never send an unresolved template variable.
-      if (missing.length > 0) {
-        const newAttemptCount = (msg.attemptCount || 0) + 1;
+        const msg = pending[0];
 
-        await this.updateMessage(msg.id, {
-          content: rendered,
-          status: 'FAILED',
-          error: `Missing template variables: ${missing.join(', ')}`,
-          attemptCount: newAttemptCount,
-        });
+        // Build template variables from the customer record.
+        // The customer.variables field contains additional columns
+        // imported from the CSV/XLSX row as JSON.
+        const customer = await (async () => {
+          const all = await this.customerApi.all();
+          const arr = Array.isArray(all) ? all : await all;
+          return arr.find((c: any) => c.id === msg.customerId) ?? null;
+        })();
 
-        const c = await this.getCampaignOrThrow(campaignId);
-        await this.updateCampaign(campaignId, {
-          failed: (c.failed || 0) + 1,
-          pending: Math.max(0, (c.pending || 0) - 1),
-        });
+        if (!customer) {
+          await this.updateMessage(msg.id, {
+            status: 'FAILED',
+            error: 'Customer record not found',
+            attemptCount: (msg.attemptCount || 0) + 1,
+          });
 
-        this.logger.warn(
-          `Campaign ${campaignId}: message ${msg.id} blocked because variables are missing: ${missing.join(', ')}`,
-        );
-
-        continue;
-      }
-
-      // Store the final personalized content before attempting delivery.
-      await this.updateMessage(msg.id, {
-        content: rendered,
-      });
-
-      const result = tpl.metaName
-        ? await this.wa.sendTemplate(msg.mobile, {
-            name: tpl.metaName,
-            language: tpl.metaLanguage || 'en',
-            parameters: TemplatesService.extractTemplateParameters(tpl.body, values),
-          })
-        : await this.wa.sendText(msg.mobile, rendered);
-      const newAttemptCount = (msg.attemptCount || 0) + 1;
-
-      if (result.ok) {
-        await this.updateMessage(msg.id, {
-          content: rendered,
-          status: 'SENT',
-          whatsappId: result.whatsappId ?? null,
-          error: null,
-          attemptCount: newAttemptCount,
-          sentAt: this.now(),
-        });
-        const c = await this.getCampaignOrThrow(campaignId);
-        await this.updateCampaign(campaignId, {
-          sent: (c.sent || 0) + 1,
-          pending: Math.max(0, (c.pending || 0) - 1),
-        });
-      } else {
-        const permanentFail = newAttemptCount >= maxAttempts;
-        await this.updateMessage(msg.id, {
-          content: rendered,
-          status: permanentFail ? 'FAILED' : 'PENDING',
-          error: result.error ?? 'unknown error',
-          attemptCount: newAttemptCount,
-        });
-        if (permanentFail) {
           const c = await this.getCampaignOrThrow(campaignId);
           await this.updateCampaign(campaignId, {
             failed: (c.failed || 0) + 1,
             pending: Math.max(0, (c.pending || 0) - 1),
           });
+
+          continue;
         }
+
+        const values: Record<string, string> = {
+          customer_name: msg.customerName,
+          mobile_no: msg.mobile,
+          mobile: msg.mobile,
+        };
+
+        // Merge imported custom variables.
+        if (customer.variables) {
+          try {
+            const custom = JSON.parse(customer.variables);
+            if (custom && typeof custom === 'object' && !Array.isArray(custom)) {
+              for (const [key, value] of Object.entries(custom)) {
+                if (value !== undefined && value !== null) {
+                  values[key] = String(value);
+                }
+              }
+            }
+          } catch {
+            this.logger.warn(`Invalid customer.variables JSON for ${msg.customerId}`);
+          }
+        }
+
+        const { rendered, missing } = TemplatesService.render(tpl.body, values);
+
+        // Never send an unresolved template variable.
+        if (missing.length > 0) {
+          const newAttemptCount = (msg.attemptCount || 0) + 1;
+
+          await this.updateMessage(msg.id, {
+            content: rendered,
+            status: 'FAILED',
+            error: `Missing template variables: ${missing.join(', ')}`,
+            attemptCount: newAttemptCount,
+          });
+
+          const c = await this.getCampaignOrThrow(campaignId);
+          await this.updateCampaign(campaignId, {
+            failed: (c.failed || 0) + 1,
+            pending: Math.max(0, (c.pending || 0) - 1),
+          });
+
+          this.logger.warn(
+            `Campaign ${campaignId}: message ${msg.id} blocked because variables are missing: ${missing.join(', ')}`,
+          );
+
+          continue;
+        }
+
+        // Store the final personalized content before attempting delivery.
+        await this.updateMessage(msg.id, {
+          content: rendered,
+        });
+
+        const result = tpl.metaName
+          ? await this.wa.sendTemplate(msg.mobile, {
+              name: tpl.metaName,
+              language: tpl.metaLanguage || 'en',
+              parameters: TemplatesService.extractTemplateParameters(tpl.body, values),
+            })
+          : await this.wa.sendText(msg.mobile, rendered);
+        const newAttemptCount = (msg.attemptCount || 0) + 1;
+
+        if (result.ok) {
+          await this.updateMessage(msg.id, {
+            content: rendered,
+            status: 'SENT',
+            whatsappId: result.whatsappId ?? null,
+            error: null,
+            attemptCount: newAttemptCount,
+            sentAt: this.now(),
+          });
+          const c = await this.getCampaignOrThrow(campaignId);
+          await this.updateCampaign(campaignId, {
+            sent: (c.sent || 0) + 1,
+            pending: Math.max(0, (c.pending || 0) - 1),
+          });
+        } else {
+          const permanentFail = newAttemptCount >= MAX_ATTEMPTS;
+          await this.updateMessage(msg.id, {
+            content: rendered,
+            status: permanentFail ? 'FAILED' : 'PENDING',
+            error: result.error ?? 'unknown error',
+            attemptCount: newAttemptCount,
+          });
+          if (permanentFail) {
+            const c = await this.getCampaignOrThrow(campaignId);
+            await this.updateCampaign(campaignId, {
+              failed: (c.failed || 0) + 1,
+              pending: Math.max(0, (c.pending || 0) - 1),
+            });
+          }
+        }
+
+        await this.sleep(throttleMs);
       }
-
-      await this.sleep(throttleMs);
+    } catch (e) {
+      this.logger.error(`Campaign ${campaignId} loop crashed: ${(e as Error).message}`);
+    } finally {
+      // Always release the runner claim, even on crashes, so the campaign can
+      // be recovered/paused again instead of being stuck as "running" forever.
+      state.running = false;
     }
-
-    state.running = false;
   }
 
   private sleep(ms: number) {
