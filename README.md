@@ -2,7 +2,7 @@
 
 An internal, full-stack application for the Bharat Gas agency network to run **personalized WhatsApp broadcast campaigns** to LPG consumers. It imports consumer records from CSV/Excel files, manages reusable message templates with dynamic variables, and orchestrates throttled, personalized campaign sends through the Meta WhatsApp Cloud API.
 
-> **Status:** Production-focused foundations in place; real WhatsApp sending is currently in **dry-run mode**. See [Current limitations and roadmap](#15-current-limitations--roadmap).
+> **Status:** Production-focused foundations in place; real WhatsApp sending is currently in **dry-run mode**. See [Current limitations and roadmap](#16-current-limitations--roadmap).
 
 ---
 
@@ -31,6 +31,7 @@ Both apps are TypeScript. The backend persists to PostgreSQL through Prisma 8 (O
 - **Campaigns** — 4‑step creation wizard, start / pause / resume / stop / retry, per‑message **throttle**, personalized rendering per customer, "never send unresolved variables" guard, live progress polling, max 3 send attempts per message.
 - **Message history** — list with search + status filter, inspector modal with the full payload and WhatsApp message ID; single direct send from a customer's detail view.
 - **WhatsApp gateway** — dry‑run simulator by default; capable of real `text` sends via Meta Cloud API when configured (see section 11).
+- **AI Assistant (OpenAI + DeepSeek)** — server‑side draft generation and message improvement with template‑variable preservation; AI output is **always** review‑gated and never sends WhatsApp messages (see section 12).
 - **Settings page** — UI shell for agency/WhatsApp settings (frontend‑only at present; nothing is persisted yet).
 
 ---
@@ -185,6 +186,12 @@ Two files — one per app — define every required variable with **placeholders
 | `ALLOWED_ORIGINS` | Comma‑separated CORS allowlist | `http://localhost:3000` (default); `*` allowed but not recommended |
 | `RATE_LIMIT_MAX` | Rate‑limit requests per window per IP | `300` (default) |
 | `RATE_LIMIT_WINDOW_MS` | Rate‑limit window in milliseconds | `60000` (default) |
+| `AI_PROVIDER` | Default AI assistant provider | `openai` or `deepseek` |
+| `OPENAI_API_KEY` | OpenAI API key (kept server‑side) | required only when using OpenAI |
+| `OPENAI_MODEL` | OpenAI model name (configurable) | default `gpt-4o-mini` |
+| `DEEPSEEK_API_KEY` | DeepSeek API key (kept server‑side) | required only when using DeepSeek |
+| `DEEPSEEK_MODEL` | DeepSeek model name (configurable) | default `deepseek-chat` |
+| `AI_TIMEOUT_MS` | Per‑request AI call timeout in ms | `30000` (default) |
 
 ### `frontend/.env.local` (from `frontend/.env.example`)
 
@@ -237,7 +244,40 @@ Open `http://localhost:3000`. The frontend talks to the backend at `http://local
 
 ---
 
-## 12. API areas currently available
+## 12. AI Assistant (OpenAI + DeepSeek) — drafting only, review‑gated
+
+A backend AI assistant that helps staff **write and improve message drafts**. It is a writing‑aid surface only.
+
+**Supported providers**
+
+- `openai` — `https://api.openai.com/v1/chat/completions`
+- `deepseek` — `https://api.deepseek.com/chat/completions`
+
+Both use server‑side HTTP calls via native `fetch` (no SDK, no extra dependencies). Provider, model and timeout are configured through environment variables (`AI_PROVIDER`, `OPENAI_API_KEY`/`OPENAI_MODEL`, `DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL`, `AI_TIMEOUT_MS`). A request may override the default provider with a `"provider": "openai" | "deepseek"` field.
+
+**Endpoints**
+
+| Method & path | Body | Returns |
+| --- | --- | --- |
+| `POST /ai/generate` | `template`, `customer` (variables), optional `provider`, `instructions`, `tone` | `{ provider, model, draft, reviewRequired }` |
+| `POST /ai/improve` | `message`, optional `provider`, `instructions`, `tone` | `{ provider, model, draft, reviewRequired }` |
+
+**Review gate (hard requirement)**
+
+- `reviewRequired` is **always `true`** in every AI response.
+- AI output is an **untrusted draft**; the user must review/edit/approve it before the existing sending workflow is used.
+- The AI module **never imports or calls the WhatsApp service** and has no path to start campaigns, dispatch messages, or call the Meta API.
+
+**Security & safety**
+
+- API keys stay **server‑side only**; they are never returned to the frontend and never written to logs. Logs contain only provider, model, draft length, and duration — never full prompts or full customer data.
+- Placeholder variables (e.g. `{{customer_name}}`, `{{agency_name}}`, `{{agency_address}}`, `{{agency_contact}}`, `{{emergency_contact}}`) must be preserved verbatim. The backend re‑extracts variables from the AI result and **rejects the draft with a controlled `400`** if any original variable is missing.
+- Inputs are validated with `class-validator` DTOs plus server‑side limits on template/message, instructions, tone, customer variables, and total request size.
+- Error mapping is clean and secret‑free: unsupported provider → `400`; missing API key → `503`; provider HTTP error / network failure / malformed or empty response → `502`; request timeout → `504`; dropped variable → `400`.
+
+---
+
+## 13. API areas currently available
 
 All routes are relative to the backend base URL (`http://localhost:3001`).
 
@@ -263,12 +303,14 @@ All routes are relative to the backend base URL (`http://localhost:3001`).
 | | `GET /messages` | Message history (capped at 100) |
 | WhatsApp | `GET /whatsapp/status` | Mode/configured state (credentials shown as masked) |
 | | `POST /whatsapp/test` | Send a test message (`to`, optional `message`) |
+| AI Assistant | `POST /ai/generate` | Generate a personalized draft from a template, customer variables and style options (review‑gated) |
+| | `POST /ai/improve` | Improve an existing message draft (review‑gated) |
 
 Request bodies for create/update/send/preview endpoints are validated through typed DTOs (`backend/src/common/dto.ts`); invalid payloads return `400` with a field‑level message list.
 
 ---
 
-## 13. Testing / build commands
+## 14. Testing / build commands
 
 ### Backend
 
@@ -291,7 +333,7 @@ npm run start          # serve the production build after `build`
 
 ---
 
-## 14. Security hardening currently implemented
+## 15. Security hardening currently implemented
 
 - **Helmet** security headers on all responses.
 - **CORS allowlist** via `ALLOWED_ORIGINS` (default `http://localhost:3000`); disallowed origins receive no CORS headers.
@@ -302,7 +344,7 @@ npm run start          # serve the production build after `build`
 
 ---
 
-## 15. Current limitations / roadmap
+## 16. Current limitations / roadmap
 
 **Known limitations**
 
@@ -311,7 +353,7 @@ npm run start          # serve the production build after `build`
 - **Scaling** — customer lists and message queries load rows into memory before filtering/paginating; message history is capped at 100 with no guaranteed order.
 - **WhatsApp** — `text`‑only sends, no Meta message templates, no webhook/receipts (see section 11).
 - **Settings page** — UI shell only; nothing is persisted.
-- **No audit logging, no AI assistant, minimal automated tests.**
+- **No audit logging, minimal automated tests.**
 
 **Planned roadmap (priority order)**
 
@@ -323,7 +365,7 @@ npm run start          # serve the production build after `build`
 6. Real Meta WhatsApp integration (message templates + webhook receipts)
 7. Authentication / authorization
 8. Audit logging
-9. AI assistant (OpenAI + DeepSeek), review‑gated
+9. ✔ AI assistant foundations (OpenAI + DeepSeek), review‑gated *(done — see section 12)*; upcoming: AI assistant UI + approve‑to‑template flow
 10. Persistent settings
 11. Automated tests (service + API e2e + frontend)
 12. Production deployment prep (Docker/CI/env)
@@ -331,7 +373,7 @@ npm run start          # serve the production build after `build`
 
 ---
 
-## 16. Git development workflow
+## 17. Git development workflow
 
 - Single long‑lived branch: **`main`** (remote: `origin`).
 - Commits use concise, conventional messages (e.g. `security: harden backend configuration and validation`).
