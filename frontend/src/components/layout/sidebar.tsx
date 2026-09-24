@@ -14,8 +14,10 @@ import {
   X,
   ShieldCheck,
   Building2,
+  Sparkles,
 } from 'lucide-react';
 import { BharatLogo } from './bharat-logo';
+import { useAuth } from '@/lib/auth-context';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -28,12 +30,14 @@ const navItems = [
   { label: 'Templates', href: '/templates', icon: FileText },
   { label: 'Campaigns', href: '/campaigns', icon: Send },
   { label: 'Messages', href: '/messages', icon: MessageSquare },
+  { label: 'AI Assistant', href: '/ai', icon: Sparkles },
   { label: 'WhatsApp API', href: '/whatsapp', icon: Smartphone },
   { label: 'Agency Settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const isCurrentActive = (href: string) => {
     if (href === '/') return pathname === '/';
@@ -135,11 +139,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
           <div className="flex items-center gap-2.5 px-2 pt-1">
             <div className="h-8 w-8 rounded-full bg-[#FFDC02] flex items-center justify-center font-bold text-xs text-[#00304A] shadow-xs shrink-0 border border-white/40">
-              BG
+              {user ? user.username.slice(0, 2).toUpperCase() : 'BG'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-white truncate">Agency Admin</p>
-              <p className="text-[11px] text-blue-100 truncate">operator@bharatgas.in</p>
+              <p className="text-sm font-semibold text-white truncate">
+                {user ? user.username : 'Signed in'}
+              </p>
+              <p className="text-[11px] text-blue-100 truncate">Administrator</p>
             </div>
           </div>
         </div>

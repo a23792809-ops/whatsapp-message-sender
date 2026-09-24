@@ -11,9 +11,15 @@ export class ApiError extends Error {
   }
 }
 
+function dispatchUnauthorized(endpoint: string): void {
+  if (typeof window !== 'undefined' && !endpoint.startsWith('/auth/')) {
+    window.dispatchEvent(new Event('bg:unauthorized'));
+  }
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  
+
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {}),
@@ -23,9 +29,13 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     const res = await fetch(url, {
       ...options,
       headers,
+      credentials: 'include',
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        dispatchUnauthorized(endpoint);
+      }
       let errData: unknown;
       try {
         errData = await res.json();
@@ -210,6 +220,56 @@ export interface WhatsAppTestRequest {
   meta?: { template?: string; language?: string; parameterCount?: number };
 }
 
+export interface AiDraftResponse {
+  provider: 'openai' | 'deepseek';
+  model: string;
+  draft: string;
+  /** Always true: AI output is a draft that requires human review before sending. */
+  reviewRequired: boolean;
+}
+
+export interface AiGenerateRequest {
+  provider?: 'openai' | 'deepseek';
+  template: string;
+  customer: Record<string, string>;
+  instructions?: string;
+  tone?: string;
+}
+
+export interface AiImproveRequest {
+  provider?: 'openai' | 'deepseek';
+  message: string;
+  instructions?: string;
+  tone?: string;
+}
+
+export interface AuthUser {
+  username: string;
+}
+
+export interface AuthLoginResponse {
+  ok: boolean;
+  user: AuthUser;
+  expiresAt: string;
+}
+
+export interface AuthMeResponse {
+  user: AuthUser;
+}
+
+export interface AuthLogoutResponse {
+  ok: boolean;
+}
+
+function authErrorMessage(data: unknown, statusText: string): string {
+  if (data && typeof data === 'object' && 'message' in data) {
+    const message = (data as { message: unknown }).message;
+    if (typeof message === 'string') return message;
+    if (Array.isArray(message) && typeof message[0] === 'string') return message[0];
+  }
+  return statusText || 'Authentication failed.';
+}
+
 function withQuery(endpoint: string, params?: Record<string, string | number | undefined>): string {
   if (!params) return endpoint;
   const sp = new URLSearchParams();
@@ -231,9 +291,13 @@ async function uploadFile<T>(
   const res = await fetch(url, {
     method: 'POST',
     body: formData,
+    credentials: 'include',
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      dispatchUnauthorized(endpoint);
+    }
     let errData: unknown;
     try {
       errData = await res.json();
@@ -316,4 +380,26 @@ export const api = {
     preview: (file: File) => uploadFile<CustomerPreviewResponse>('/customers/upload/preview', file),
     upload: (file: File) => uploadFile<CustomerUploadResponse>('/customers/upload', file),
   },
+
+  ai: {
+    generate: (dto: AiGenerateRequest) => api.post<AiDraftResponse>('/ai/generate', dto),
+    improve: (dto: AiImproveRequest) => api.post<AiDraftResponse>('/ai/improve', dto),
+  },
+
+  auth: {
+    login: async (username: string, password: string): Promise<AuthLoginResponse> => {
+      try {
+        return await api.post<AuthLoginResponse>('/auth/login', { username, password });
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          throw new Error('Invalid username or password.');
+        }
+        throw error;
+      }
+    },
+    me: () => api.get<AuthMeResponse>('/auth/me'),
+    logout: () => api.post<AuthLogoutResponse>('/auth/logout'),
+  },
 };
+
+export { authErrorMessage };

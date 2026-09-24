@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
-import { Menu, Search, RefreshCw, HelpCircle, Bell } from 'lucide-react';
+import React, { useState } from 'react';
+import { Menu, Search, RefreshCw, HelpCircle, Bell, LogOut, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth-context';
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -17,6 +18,19 @@ export function Topbar({
   onRefresh,
   isRefreshing = false,
 }: TopbarProps) {
+  const { user, logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   return (
     <header className="h-16 bg-white border-b border-slate-200 sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 shadow-sm">
       {/* Left: Mobile Menu Trigger & Search */}
@@ -95,16 +109,29 @@ export function Topbar({
         {/* Agency Operator Avatar */}
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
           <div className="h-9 w-9 rounded-full bg-[#007BC9] text-[#FFDC02] border-2 border-[#FFDC02] flex items-center justify-center font-bold text-sm shadow-xs">
-            BG
+            {user ? user.username.slice(0, 2).toUpperCase() : 'BG'}
           </div>
           <div className="hidden lg:block text-left">
             <span className="text-sm font-semibold text-slate-800 block leading-tight">
-              Alibag Agency
+              {user ? user.username : 'Agency'}
             </span>
             <span className="text-xs text-slate-500 block leading-tight">
               Distribution Desk
             </span>
           </div>
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="p-2 ml-1 rounded-lg text-slate-500 hover:text-rose-700 hover:bg-rose-50 transition-colors disabled:opacity-60"
+            title="Sign out"
+            aria-label="Sign out"
+          >
+            {loggingOut ? (
+              <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            ) : (
+              <LogOut className="h-4.5 w-4.5" />
+            )}
+          </button>
         </div>
       </div>
     </header>
