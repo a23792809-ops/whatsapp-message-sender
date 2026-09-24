@@ -10,6 +10,7 @@
     "build": "nest build ; mkdir -p dist/prisma ; cp -f src/prisma/contract.json dist/prisma/contract.json",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "hash:password": "node scripts/hash-password.mjs",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

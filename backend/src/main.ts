@@ -43,7 +43,18 @@ async function bootstrap() {
     },
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   });
+
+  // Stricter, path-scoped limit for the admin login endpoint.
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    message: { statusCode: 429, message: 'Too many login attempts. Please try again later.' },
+  });
+  app.use('/auth/login', loginLimiter);
 
   app.use(
     rateLimit({
