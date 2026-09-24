@@ -8,6 +8,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     await db.connect();
+    await (db.orm as any).public.Customer.aggregate((a: any) => ({ n: a.count() }));
     this.logger.log('Prisma connected to PostgreSQL');
   }
 

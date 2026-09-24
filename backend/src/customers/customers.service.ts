@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { or } from '@prisma/orm-postgres/orm-client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { parse } from 'csv-parse/sync';
 import * as ExcelJS from 'exceljs';
@@ -242,56 +243,56 @@ export class CustomersService {
 
   /**
    * Paginated, searchable, filterable customer list.
+   * Search, status filtering, sorting, and pagination are pushed into the
+   * database/ORM query layer.
    * Returns { data, meta } with total / page / pageSize / totalPages.
    */
   async list(params: { search?: string; status?: string; page?: number; pageSize?: number } = {}): Promise<CustomerListResult> {
     const api = this.customerApi;
-    if (!api?.all) {
-      return {
-        data: [],
-        meta: { total: 0, page: 1, pageSize: 25, totalPages: 1, byStatus: { sent: 0, failed: 0, pending: 0 } },
-      };
+    const search = (params.search ?? '').trim();
+    const status = (params.status ?? '').toUpperCase();
+    const pageSize = Math.min(500, Math.max(1, params.pageSize ?? 100));
+    const page = Math.max(1, params.page ?? 1);
+
+    let collection: any = api;
+    if (search) {
+      const like = `%${search}%`;
+      collection = collection.where((c: any) =>
+        or(c.name.ilike(like), c.mobile.ilike(like), c.variables.ilike(like)),
+      );
     }
-    const res = await api.all();
-    let rows = Array.isArray(res) ? res : await res;
+    if (status && status !== 'ALL') {
+      if (status === 'SENT' || status === 'PENDING') {
+        const matches = status === 'SENT' ? ['SENT', 'COMPLETED'] : ['PENDING', 'DRAFT'];
+        collection = collection.where((c: any) => or(c.status.eq(matches[0]), c.status.eq(matches[1])));
+      } else {
+        collection = collection.where((c: any) => c.status.eq(status));
+      }
+    }
+
+    const [counted, statusCounts] = await Promise.all([
+      collection.aggregate((a: any) => ({ n: a.count() })),
+      api.groupBy('status').aggregate((a: any) => ({ n: a.count() })),
+    ]);
+    const total = counted.n;
 
     // Global status counts (unfiltered) so the UI can show accurate stats.
     const byStatus = { sent: 0, failed: 0, pending: 0 };
-    for (const c of rows) {
-      const s = (c.status || 'PENDING').toUpperCase();
-      if (s === 'SENT' || s === 'COMPLETED') byStatus.sent += 1;
-      else if (s === 'FAILED') byStatus.failed += 1;
-      else byStatus.pending += 1;
+    for (const row of statusCounts) {
+      if (row.status === 'SENT' || row.status === 'COMPLETED') byStatus.sent += row.n;
+      else if (row.status === 'FAILED') byStatus.failed += row.n;
+      else byStatus.pending += row.n;
     }
 
-    const q = (params.search ?? '').trim().toLowerCase();
-    if (q) {
-      rows = rows.filter((c: any) =>
-        String(c.name ?? '').toLowerCase().includes(q) ||
-        String(c.mobile ?? '').includes(q) ||
-        (c.variables && String(c.variables).toLowerCase().includes(q)),
-      );
-    }
-
-    const status = (params.status ?? '').toUpperCase();
-    if (status && status !== 'ALL') {
-      rows = rows.filter((c: any) => {
-        const s = (c.status || 'PENDING').toUpperCase();
-        if (status === 'SENT') return s === 'SENT' || s === 'COMPLETED';
-        if (status === 'PENDING') return s === 'PENDING' || s === 'DRAFT';
-        if (status === 'FAILED') return s === 'FAILED';
-        return s === status;
-      });
-    }
-
-    const total = rows.length;
-    const pageSize = Math.min(500, Math.max(1, params.pageSize ?? 100));
-    const page = Math.max(1, params.page ?? 1);
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const start = (page - 1) * pageSize;
+    const data = await collection
+      .orderBy([(c: any) => c.createdAt.desc(), (c: any) => c.id.desc()])
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .all();
 
     return {
-      data: rows.slice(start, start + pageSize),
+      data,
       meta: { total, page, pageSize, totalPages, byStatus },
     };
   }
