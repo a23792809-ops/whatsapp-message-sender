@@ -9,6 +9,7 @@ interface StatCardProps {
   icon: LucideIcon;
   variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'orange';
   loading?: boolean;
+  error?: boolean;
 }
 
 const variantStyles = {
@@ -45,16 +46,25 @@ export function StatCard({
   icon: Icon,
   variant = 'default',
   loading = false,
+  error = false,
 }: StatCardProps) {
   const currentVariant = variantStyles[variant] || variantStyles.default;
 
+  const displayValue = error || loading ? '—' : value;
+  const displaySubtitle = error
+    ? 'Unable to load'
+    : loading
+      ? 'Loading...'
+      : subtitle;
+
   return (
-    <Card className="p-5 flex flex-col justify-between border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
+    <Card
+      className="p-5 flex flex-col justify-between border-slate-200 shadow-sm hover:border-blue-300 transition-colors"
+      aria-label={`${title}: ${displayValue}`}
+    >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-          {title}
-        </span>
-        <div className={`p-2.5 rounded-lg border ${currentVariant.icon}`}>
+        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">{title}</span>
+        <div className={`p-2.5 rounded-lg border ${currentVariant.icon}`} aria-hidden="true">
           <Icon className="h-5 w-5" />
         </div>
       </div>
@@ -63,14 +73,20 @@ export function StatCard({
         {loading ? (
           <div className="h-8 w-24 bg-slate-200 animate-pulse rounded-md my-1" />
         ) : (
-          <div className={`text-2xl sm:text-3xl font-bold tracking-tight ${currentVariant.accent}`}>
+          <div
+            className={`text-2xl sm:text-3xl font-bold tracking-tight ${
+              error
+                ? 'text-slate-300 font-semibold'
+                : currentVariant.accent
+            }`}
+          >
             {value}
           </div>
         )}
 
-        {subtitle && (
-          <p className="text-sm text-slate-500 mt-1 font-medium">
-            {subtitle}
+        {displaySubtitle && (
+          <p className={`text-sm mt-1 font-medium ${error ? 'text-slate-400' : 'text-slate-500'}`}>
+            {displaySubtitle}
           </p>
         )}
       </div>
