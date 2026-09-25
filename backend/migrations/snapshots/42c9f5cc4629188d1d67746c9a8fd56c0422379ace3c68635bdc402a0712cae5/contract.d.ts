@@ -34,7 +34,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'cac7204061a2a2527c433770e0cb98430fccfa10b1dd5dc86f294948fc89a082'>;
+  StorageHashBase<'42c9f5cc4629188d1d67746c9a8fd56c0422379ace3c68635bdc402a0712cae5'>;
 export type ExecutionHash =
   ExecutionHashBase<'22f7e47ebe8faece6f8d4a1615b69d8ed52108be3e4320ba425d13b32afb50b0'>;
 export type ProfileHash =
@@ -292,12 +292,8 @@ export type FieldOutputTypes = {
       readonly status: CodecTypes['pg/text@1']['output'];
       readonly whatsappId: CodecTypes['pg/text@1']['output'] | null;
       readonly error: CodecTypes['pg/text@1']['output'] | null;
-      readonly errorCode: CodecTypes['pg/int4@1']['output'] | null;
-      readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-      readonly deliveredAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-      readonly readAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-      readonly failedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly attemptCount: CodecTypes['pg/int4@1']['output'];
+      readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     };
     readonly MessageTemplate: {
@@ -365,12 +361,8 @@ export type FieldInputTypes = {
       readonly status: CodecTypes['pg/text@1']['input'];
       readonly whatsappId: CodecTypes['pg/text@1']['input'] | null;
       readonly error: CodecTypes['pg/text@1']['input'] | null;
-      readonly errorCode: CodecTypes['pg/int4@1']['input'] | null;
-      readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
-      readonly deliveredAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
-      readonly readAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
-      readonly failedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly attemptCount: CodecTypes['pg/int4@1']['input'];
+      readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
     };
     readonly MessageTemplate: {
@@ -435,13 +427,9 @@ export type StorageColumnTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
       readonly customerId: CodecTypes['pg/text@1']['output'];
       readonly customerName: CodecTypes['pg/text@1']['output'];
-      readonly deliveredAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly error: CodecTypes['pg/text@1']['output'] | null;
-      readonly errorCode: CodecTypes['pg/int4@1']['output'] | null;
-      readonly failedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly id: CodecTypes['pg/text@1']['output'];
       readonly mobile: CodecTypes['pg/text@1']['output'];
-      readonly readAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
       readonly status: CodecTypes['pg/text@1']['output'];
       readonly whatsappId: CodecTypes['pg/text@1']['output'] | null;
@@ -508,13 +496,9 @@ export type StorageColumnInputTypes = {
       readonly createdAt: CodecTypes['pg/timestamptz-temporal@1']['input'];
       readonly customerId: CodecTypes['pg/text@1']['input'];
       readonly customerName: CodecTypes['pg/text@1']['input'];
-      readonly deliveredAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly error: CodecTypes['pg/text@1']['input'] | null;
-      readonly errorCode: CodecTypes['pg/int4@1']['input'] | null;
-      readonly failedAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly id: CodecTypes['pg/text@1']['input'];
       readonly mobile: CodecTypes['pg/text@1']['input'];
-      readonly readAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly sentAt: CodecTypes['pg/timestamptz-temporal@1']['input'] | null;
       readonly status: CodecTypes['pg/text@1']['input'];
       readonly whatsappId: CodecTypes['pg/text@1']['input'] | null;
@@ -572,12 +556,8 @@ export namespace Models {
     status: CodecTypes['pg/text@1']['output'];
     whatsappId: CodecTypes['pg/text@1']['output'] | null;
     error: CodecTypes['pg/text@1']['output'] | null;
-    errorCode: CodecTypes['pg/int4@1']['output'] | null;
-    sentAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-    deliveredAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-    readAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
-    failedAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     attemptCount: CodecTypes['pg/int4@1']['output'];
+    sentAt: CodecTypes['pg/timestamptz-temporal@1']['output'] | null;
     createdAt: CodecTypes['pg/timestamptz-temporal@1']['output'];
     campaign: public_Campaign | null;
     customer: public_Customer;
@@ -971,31 +951,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/text@1';
                   readonly nullable: true;
                 };
-                readonly errorCode: {
-                  readonly nativeType: 'int4';
-                  readonly codecId: 'pg/int4@1';
-                  readonly nullable: true;
-                };
-                readonly sentAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                  readonly nullable: true;
-                };
-                readonly deliveredAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                  readonly nullable: true;
-                };
-                readonly readAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                  readonly nullable: true;
-                };
-                readonly failedAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                  readonly nullable: true;
-                };
                 readonly attemptCount: {
                   readonly nativeType: 'int4';
                   readonly codecId: 'pg/int4@1';
@@ -1004,6 +959,11 @@ type ContractBase = Omit<
                     readonly kind: 'literal';
                     readonly value: DefaultLiteralValue<'pg/int4@1', 0>;
                   };
+                };
+                readonly sentAt: {
+                  readonly nativeType: 'timestamptz';
+                  readonly codecId: 'pg/timestamptz-temporal@1';
+                  readonly nullable: true;
                 };
                 readonly createdAt: {
                   readonly nativeType: 'timestamptz';
@@ -1037,12 +997,6 @@ type ContractBase = Omit<
                   readonly name: 'message_createdAt_idx_9575dbd7';
                   readonly prefix: 'message_createdAt_idx';
                   readonly columns: readonly ['createdAt'];
-                  readonly unique: false;
-                },
-                {
-                  readonly name: 'message_whatsappId_idx_028afc20';
-                  readonly prefix: 'message_whatsappId_idx';
-                  readonly columns: readonly ['whatsappId'];
                   readonly unique: false;
                 },
               ];
@@ -1466,8 +1420,8 @@ type ContractBase = Omit<
                 readonly nullable: true;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly errorCode: {
-                readonly nullable: true;
+              readonly attemptCount: {
+                readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
               readonly sentAt: {
@@ -1476,31 +1430,6 @@ type ContractBase = Omit<
                   readonly kind: 'scalar';
                   readonly codecId: 'pg/timestamptz-temporal@1';
                 };
-              };
-              readonly deliveredAt: {
-                readonly nullable: true;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                };
-              };
-              readonly readAt: {
-                readonly nullable: true;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                };
-              };
-              readonly failedAt: {
-                readonly nullable: true;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-temporal@1';
-                };
-              };
-              readonly attemptCount: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
               readonly createdAt: {
                 readonly nullable: false;
@@ -1549,12 +1478,8 @@ type ContractBase = Omit<
                 readonly status: { readonly column: 'status' };
                 readonly whatsappId: { readonly column: 'whatsappId' };
                 readonly error: { readonly column: 'error' };
-                readonly errorCode: { readonly column: 'errorCode' };
-                readonly sentAt: { readonly column: 'sentAt' };
-                readonly deliveredAt: { readonly column: 'deliveredAt' };
-                readonly readAt: { readonly column: 'readAt' };
-                readonly failedAt: { readonly column: 'failedAt' };
                 readonly attemptCount: { readonly column: 'attemptCount' };
+                readonly sentAt: { readonly column: 'sentAt' };
                 readonly createdAt: { readonly column: 'createdAt' };
               };
             };

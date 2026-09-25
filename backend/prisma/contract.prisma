@@ -1,72 +1,111 @@
 // use prisma-8
-
 model Customer {
-  id          String   @id @default(cuid(2))
+  id          String               @id @default(cuid(2))
   mobile      String
   name        String
   template    String?
   variables   String?
-  status      String   @default("PENDING")
+  status      String               @default("PENDING")
   lastAttempt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime             @default(now())
   updatedAt   temporal.updatedAt()
 
-  messages Message[]
+  messages    Message[]
 
   @@index([mobile])
   @@index([status])
 }
 
 model Campaign {
-  id         String   @id @default(cuid(2))
+  id         String               @id @default(cuid(2))
   name       String
-  status     String   @default("DRAFT")
+  status     String               @default("DRAFT")
   templateId String?
-  throttleMs Int      @default(19000)
-  total      Int      @default(0)
-  sent       Int      @default(0)
-  failed     Int      @default(0)
-  pending    Int      @default(0)
-  createdAt  DateTime @default(now())
+  throttleMs Int                  @default(19000)
+  total      Int                  @default(0)
+  sent       Int                  @default(0)
+  failed     Int                  @default(0)
+  pending    Int                  @default(0)
+  createdAt  DateTime             @default(now())
   updatedAt  temporal.updatedAt()
 
-  messages Message[]
+  messages   Message[]
 }
 
 model Message {
-  id            String    @id @default(cuid(2))
-  customerId    String
-  campaignId    String?
-  mobile        String
-  customerName  String
-  content       String
-  status        String    @default("PENDING")
-  whatsappId    String?
-  error         String?
-  attemptCount  Int       @default(0)
-  sentAt        DateTime?
-  createdAt     DateTime  @default(now())
+  id           String    @id @default(cuid(2))
+  customerId   String
+  campaignId   String?
+  mobile       String
+  customerName String
+  content      String
+  status       String    @default("PENDING")
+  whatsappId   String?
+  error        String?
+  // Meta's numeric error code for a post-send delivery failure, when supplied.
+  // Bounded and non-secret; the human-readable text lives in `error`.
+  errorCode    Int?
+  // Delivery lifecycle timestamps reported by the WhatsApp Cloud API webhook.
+  // Each is written at most once (first observation wins) so a repeated or
+  // out-of-order delivery event can never rewrite established history.
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  failedAt     DateTime?
+  attemptCount Int       @default(0)
+  createdAt    DateTime  @default(now())
 
-  customer Customer  @relation(fields: [customerId], references: [id])
-  campaign Campaign? @relation(fields: [campaignId], references: [id])
+  customer     Customer  @relation(fields:[customerId], references:[id])
+  campaign     Campaign? @relation(fields:[campaignId], references:[id])
 
   @@index([customerId])
   @@index([campaignId])
   @@index([status])
   @@index([createdAt])
+  // Webhook delivery events are looked up by the Meta message id.
+  @@index([whatsappId])
 }
 
 model MessageTemplate {
-  id           String   @id @default(cuid(2))
-  name         String   @unique
+  id           String               @id @default(cuid(2))
+  name         String               @unique
   body         String
   description  String?
-  isActive     Boolean  @default(true)
+  isActive     Boolean              @default(true)
   metaName     String?
-  metaLanguage String?  @default("en")
-  createdAt    DateTime @default(now())
+  metaLanguage String?              @default("en")
+  createdAt    DateTime             @default(now())
   updatedAt    temporal.updatedAt()
 
   @@index([name])
   @@index([isActive])
+}
+
+// Append-only trail of important business actions. Deliberately holds no
+// secrets, tokens or customer message bodies: only an action, the entity it
+// touched, an outcome and a short safe summary.
+model AuditLog {
+  id         String   @id @default(cuid(2))
+  action     String
+  entityType String
+  entityId   String?
+  status     String   @default("SUCCESS")
+  actor      String   @default("SYSTEM")
+  message    String?
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Operator-tunable application preferences. Secrets are never stored here:
+// WhatsApp credentials remain environment configuration.
+model AppSetting {
+  key       String               @id
+  value     String
+  createdAt DateTime             @default(now())
+  updatedAt temporal.updatedAt()
 }
