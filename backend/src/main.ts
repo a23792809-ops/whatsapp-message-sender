@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module.js';
+import { redactUrlForLog } from './common/redact-url.js';
 
 async function bootstrap() {
   // `rawBody` keeps the exact bytes Meta sent on `req.rawBody`. The webhook
@@ -26,18 +27,23 @@ async function bootstrap() {
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { extended: true, limit: bodyLimit });
 
+  const port = Number(process.env.PORT) || 3001;
+
   app.use(helmet());
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     const startedAt = Date.now();
+    // Log the redacted URL: the raw query string can carry a credential.
+    const loggedUrl = redactUrlForLog(req.originalUrl || req.url);
     res.on('finish', () => {
       const status = res.statusCode;
+      const took = `${Date.now() - startedAt}ms`;
       if (status >= 500) {
-        logger.error(`${req.method} ${req.originalUrl} ${status} ${Date.now() - startedAt}ms`);
+        logger.error(`${req.method} ${loggedUrl} ${status} ${took}`);
       } else if (status >= 400) {
-        logger.warn(`${req.method} ${req.originalUrl} ${status} ${Date.now() - startedAt}ms`);
+        logger.warn(`${req.method} ${loggedUrl} ${status} ${took}`);
       } else {
-        logger.log(`${req.method} ${req.originalUrl} ${status} ${Date.now() - startedAt}ms`);
+        logger.log(`${req.method} ${loggedUrl} ${status} ${took}`);
       }
     });
     next();
@@ -88,7 +94,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(3001);
-  logger.log(`Bharat Gas WhatsApp Sender API listening on :3001`);
+  await app.listen(port);
+  logger.log(`Bharat Gas WhatsApp Sender API listening on :${port}`);
 }
 await bootstrap();
