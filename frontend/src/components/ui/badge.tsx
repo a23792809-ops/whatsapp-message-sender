@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Clock, AlertOctagon, PauseCircle, PlayCircle, FileText, Ban } from 'lucide-react';
+import { CheckCircle2, Clock, AlertOctagon, PauseCircle, PlayCircle, FileText, Ban, Eye } from 'lucide-react';
 
 export type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'primary';
 
@@ -46,6 +46,13 @@ export function StatusBadge({ status, showIcon = true }: { status: string; showI
     case 'DELIVERED':
       variant = 'success';
       Icon = CheckCircle2;
+      break;
+    // READ is the furthest a delivery can get, so it is shown distinctly from
+    // DELIVERED rather than collapsing the two into one indistinguishable
+    // green badge.
+    case 'READ':
+      variant = 'success';
+      Icon = Eye;
       break;
     case 'RUNNING':
       variant = 'info';

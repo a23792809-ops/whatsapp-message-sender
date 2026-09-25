@@ -67,6 +67,19 @@ export interface HealthResponse {
   };
 }
 
+export interface WebhookStatus {
+  /** Public path to register with Meta. */
+  endpoint: string;
+  /** Whether WHATSAPP_WEBHOOK_VERIFY_TOKEN is set. */
+  verificationConfigured: boolean;
+  /** Whether WHATSAPP_APP_SECRET is set, and signatures can be checked. */
+  signatureConfigured: boolean;
+  /** True when a signature is mandatory: live mode or production. */
+  signatureRequired: boolean;
+  /** True once Meta has completed the GET handshake against this server. */
+  verifiedByMeta: boolean;
+}
+
 export interface WhatsAppStatusResponse {
   mode?: string;
   configured: boolean;
@@ -75,6 +88,7 @@ export interface WhatsAppStatusResponse {
   phoneNumberId: string;
   accessToken?: string;
   countryCode?: string;
+  webhook?: WebhookStatus;
 }
 
 export interface TemplateSummary {
@@ -145,6 +159,19 @@ export interface PaginatedCustomers {
   meta: CustomerMeta;
 }
 
+/** GET /messages now returns a paginated envelope. */
+export interface PaginatedMessages {
+  data: MessageSummary[];
+  meta: PageMeta;
+}
+
+export interface PageMeta {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export interface UploadRowIssue {
   row: number;
   mobile?: string;
@@ -192,11 +219,17 @@ export interface MessageSummary {
   mobile: string;
   customerName: string;
   content: string;
-  status: 'PENDING' | 'SENT' | 'FAILED' | string;
+  status: 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | string;
   whatsappId: string | null;
   error: string | null;
+  /** Meta's numeric code for a post-send delivery failure, when supplied. */
+  errorCode: number | null;
   attemptCount: number;
   sentAt: string | null;
+  /** Delivery lifecycle, filled in as the webhook reports it. */
+  deliveredAt: string | null;
+  readAt: string | null;
+  failedAt: string | null;
   createdAt: string;
 }
 
@@ -387,7 +420,17 @@ export const api = {
   },
 
   messages: {
-    list: () => api.get<MessageSummary[]>('/messages'),
+    /** Paginated envelope, for callers that want server-side paging. */
+    listPaged: (params?: {
+      page?: number;
+      pageSize?: number;
+      search?: string;
+      status?: string;
+      campaignId?: string;
+      customerId?: string;
+    }) => api.get<PaginatedMessages>(withQuery('/messages', params)),
+    /** Flat array of the current page, preserving the previous call shape. */
+    list: async () => (await api.get<PaginatedMessages>('/messages')).data,
     send: (customerId: string, templateId: string) =>
       api.post<SingleSendResponse>('/messages/send', { customerId, templateId }),
   },

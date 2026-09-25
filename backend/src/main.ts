@@ -7,9 +7,24 @@ import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {});
+  // `rawBody` keeps the exact bytes Meta sent on `req.rawBody`. The webhook
+  // signature is an HMAC over those bytes, so a re-serialised object would
+  // change key order and whitespace and every signature would fail. The buffer
+  // is only retained for routes that read it; nothing else is affected.
+  //
+  // `bodyParser: false` hands parser registration to us so the size limit can
+  // be set explicitly. Express's implicit default is 100kb, which is smaller
+  // than a batched Meta delivery notification: a large batch is rejected with
+  // 413, Meta retries it forever, and those delivery statuses are silently
+  // never recorded. `useBodyParser` re-applies Nest's own rawBody verify hook,
+  // so signature verification is unaffected by the custom limit.
+  const app = await NestFactory.create(AppModule, { rawBody: true, bodyParser: false });
   const config = app.get(ConfigService);
   const logger = new Logger('HTTP');
+
+  const bodyLimit = process.env.BODY_LIMIT?.trim() || '1mb';
+  app.useBodyParser('json', { limit: bodyLimit });
+  app.useBodyParser('urlencoded', { extended: true, limit: bodyLimit });
 
   app.use(helmet());
 

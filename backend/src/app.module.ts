@@ -16,6 +16,7 @@ import { AiModule } from './ai/ai.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
+import { WebhooksModule } from './webhooks/webhooks.module.js';
 
 @Module({
   imports: [
@@ -33,6 +34,9 @@ import { AnalyticsModule } from './analytics/analytics.module.js';
     AuditModule,
     SettingsModule,
     AnalyticsModule,
+    // Meta's delivery callbacks. Its two routes are @Public and authenticate
+    // themselves via verify token / HMAC signature instead of a session.
+    WebhooksModule,
   ],
   controllers: [AppController],
   providers: [

@@ -13,6 +13,7 @@ import {
 import {
   MessageSquare,
   Search,
+  Send,
   CheckCircle2,
   AlertOctagon,
   Clock,
@@ -90,6 +91,8 @@ export default function MessagesPage() {
       const matchStatus =
         statusFilter === 'ALL' ||
         (statusFilter === 'SENT' && upperStatus === 'SENT') ||
+        (statusFilter === 'DELIVERED' && upperStatus === 'DELIVERED') ||
+        (statusFilter === 'READ' && upperStatus === 'READ') ||
         (statusFilter === 'FAILED' && upperStatus === 'FAILED') ||
         (statusFilter === 'PENDING' && upperStatus === 'PENDING');
 
@@ -100,6 +103,8 @@ export default function MessagesPage() {
   // Statistics
   const totalCount = messages.length;
   const sentCount = messages.filter((m) => (m.status || '').toUpperCase() === 'SENT').length;
+  const deliveredCount = messages.filter((m) => (m.status || '').toUpperCase() === 'DELIVERED').length;
+  const readCount = messages.filter((m) => (m.status || '').toUpperCase() === 'READ').length;
   const failedCount = messages.filter((m) => (m.status || '').toUpperCase() === 'FAILED').length;
   const pendingCount = messages.filter((m) => (m.status || '').toUpperCase() === 'PENDING').length;
 
@@ -141,7 +146,7 @@ export default function MessagesPage() {
         )}
 
         {/* Summary Stat Strips */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
           <Card className="p-4 bg-white border-slate-200">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase">Total Messages</span>
@@ -153,11 +158,29 @@ export default function MessagesPage() {
           </Card>
           <Card className="p-4 bg-white border-slate-200">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-emerald-700 uppercase">Sent (Delivered)</span>
+              <span className="text-[11px] font-bold text-slate-600 uppercase">Accepted</span>
+              <Send className="h-4 w-4 text-slate-500" />
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-slate-700 mt-2">
+              {loading ? '—' : (sentCount + deliveredCount + readCount).toLocaleString()}
+            </div>
+          </Card>
+          <Card className="p-4 bg-white border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-emerald-700 uppercase">Delivered</span>
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
             </div>
             <div className="text-xl sm:text-2xl font-bold text-emerald-700 mt-2">
-              {loading ? '—' : sentCount.toLocaleString()}
+              {loading ? '—' : (deliveredCount + readCount).toLocaleString()}
+            </div>
+          </Card>
+          <Card className="p-4 bg-white border-slate-200">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-teal-700 uppercase">Read</span>
+              <Eye className="h-4 w-4 text-teal-600" />
+            </div>
+            <div className="text-xl sm:text-2xl font-bold text-teal-700 mt-2">
+              {loading ? '—' : readCount.toLocaleString()}
             </div>
           </Card>
           <Card className="p-4 bg-white border-slate-200">
@@ -196,8 +219,8 @@ export default function MessagesPage() {
               </div>
 
               {/* Status Filter Tabs */}
-              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 self-start sm:self-auto">
-                {(['ALL', 'SENT', 'PENDING', 'FAILED'] as const).map((tab) => (
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-lg border border-slate-200 self-start sm:self-auto max-w-full overflow-x-auto">
+                {(['ALL', 'SENT', 'DELIVERED', 'READ', 'PENDING', 'FAILED'] as const).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setStatusFilter(tab)}
@@ -358,12 +381,66 @@ export default function MessagesPage() {
                   <div className="font-bold flex items-center gap-1.5 text-rose-800">
                     <AlertOctagon className="h-4 w-4 text-rose-600" />
                     Gateway Error Reason:
+                    {inspectMessage.errorCode ? (
+                      <span className="font-mono text-[10px] px-1.5 py-0.5 bg-white border border-rose-200 rounded">
+                        code {inspectMessage.errorCode}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="font-mono text-[11px] bg-white p-2 rounded border border-rose-200 text-rose-800">
                     {inspectMessage.error}
                   </div>
                 </div>
               )}
+
+              {/* Delivery Timeline, filled in by the WhatsApp webhook */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+                <div className="font-bold text-slate-700">Delivery Timeline</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { key: 'sentAt', label: 'Sent', Icon: Send },
+                      { key: 'deliveredAt', label: 'Delivered', Icon: CheckCircle2 },
+                      { key: 'readAt', label: 'Read', Icon: Eye },
+                      { key: 'failedAt', label: 'Failed', Icon: AlertOctagon },
+                    ] as const
+                  ).map(({ key, label, Icon }) => {
+                    const at = (inspectMessage as unknown as Record<string, string | null>)[key];
+                    return (
+                      <div
+                        key={key}
+                        className={`p-2 rounded-lg border flex flex-col gap-0.5 ${
+                          at
+                            ? key === 'failedAt'
+                              ? 'bg-rose-50 border-rose-200'
+                              : 'bg-emerald-50 border-emerald-200'
+                            : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1 font-bold text-slate-500 text-[10px] uppercase">
+                          <Icon className="h-3 w-3" />
+                          {label}
+                        </span>
+                        <span className={`font-mono text-[10px] ${at ? 'text-slate-700' : 'text-slate-300'}`}>
+                          {at
+                            ? new Date(at).toLocaleString('en-US', {
+                                month: 'short',
+                                day: '2-digit',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                              })
+                            : 'Not yet'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">
+                  Reported by the Meta WhatsApp Cloud API webhook. Each stage is recorded once, when Meta first
+                  confirms it.
+                </p>
+              </div>
 
               {/* Meta Cloud WhatsApp ID */}
               <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs space-y-1 text-blue-950">

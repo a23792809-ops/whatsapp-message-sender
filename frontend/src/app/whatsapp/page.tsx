@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Radio,
   AlertCircle,
+  Webhook,
 } from 'lucide-react';
 
 export default function WhatsAppPage() {
@@ -219,6 +220,63 @@ export default function WhatsAppPage() {
                         </span>
                       </div>
                     </div>
+
+                    {/* Webhook readiness. Booleans only: the verify token and app
+                        secret are never sent to the browser. */}
+                    {status?.webhook && (
+                      <div className="p-3.5 rounded-lg bg-slate-50 border border-slate-200 space-y-2.5">
+                        <div className="font-bold flex items-center gap-1.5 text-sm text-[#212529]">
+                          <Webhook className="h-4 w-4 text-[#007BC9]" />
+                          Delivery Webhook
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-semibold text-slate-600">Callback URL</span>
+                          <code className="font-mono text-slate-800 bg-white px-2 py-1 rounded border border-slate-200">
+                            {status.webhook.endpoint}
+                          </code>
+                        </div>
+                        {(
+                          [
+                            {
+                              label: 'Verify Token',
+                              ok: status.webhook.verificationConfigured,
+                              hint: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
+                            },
+                            {
+                              label: 'Signature Check',
+                              ok: status.webhook.signatureConfigured,
+                              hint: 'WHATSAPP_APP_SECRET',
+                            },
+                            {
+                              label: 'Verified by Meta',
+                              ok: status.webhook.verifiedByMeta,
+                              hint: 'Meta completed the handshake',
+                            },
+                          ] as const
+                        ).map((row) => (
+                          <div key={row.label} className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-600">{row.label}</span>
+                            <span
+                              className={`inline-flex items-center gap-1 font-semibold px-2 py-0.5 rounded border ${
+                                row.ok
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200'
+                              }`}
+                              title={row.hint}
+                            >
+                              {row.ok ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                              {row.ok ? 'Ready' : 'Not set'}
+                            </span>
+                          </div>
+                        ))}
+                        {status.webhook.signatureRequired && !status.webhook.signatureConfigured && (
+                          <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded p-2 leading-relaxed">
+                            An app secret is required in this mode. Without it every delivery event is rejected, so
+                            delivery statuses will never update.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {isDryRun && (
                       <div className="p-3.5 rounded-lg bg-yellow-50 border border-yellow-300 text-sm text-yellow-900 space-y-1">
