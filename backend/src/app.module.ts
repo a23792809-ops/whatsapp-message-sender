@@ -13,6 +13,9 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module.js';
 import { MessagesModule } from './messages/messages.module.js';
 import { CampaignsModule } from './campaigns/campaigns.module.js';
 import { AiModule } from './ai/ai.module.js';
+import { AuditModule } from './audit/audit.module.js';
+import { SettingsModule } from './settings/settings.module.js';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 
 @Module({
   imports: [
@@ -26,6 +29,10 @@ import { AiModule } from './ai/ai.module.js';
     MessagesModule,
     CampaignsModule,
     AiModule,
+    // AuditModule is @Global: every module can record actions without importing it.
+    AuditModule,
+    SettingsModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [

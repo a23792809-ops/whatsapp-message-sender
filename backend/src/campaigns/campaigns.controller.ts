@@ -1,14 +1,22 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { CreateCampaignDto } from '../common/dto.js';
 import { CampaignsService } from './campaigns.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AuditAction, AuditEntityType } from '../audit/audit.types.js';
 
 @Controller('campaigns')
 export class CampaignsController {
-  constructor(private readonly campaigns: CampaignsService) {}
+  constructor(
+    private readonly campaigns: CampaignsService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Post()
-  create(@Body() body: CreateCampaignDto) {
-    return this.campaigns.create(body);
+  async create(@Body() body: CreateCampaignDto) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_CREATE, entityType: AuditEntityType.CAMPAIGN, message: `campaign "${body.name}"` },
+      () => this.campaigns.create(body),
+    );
   }
 
   @Get()
@@ -27,27 +35,42 @@ export class CampaignsController {
   }
 
   @Post(':id/start')
-  start(@Param('id') id: string) {
-    return this.campaigns.start(id);
+  async start(@Param('id') id: string) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_START, entityType: AuditEntityType.CAMPAIGN, entityId: id },
+      () => this.campaigns.start(id),
+    );
   }
 
   @Post(':id/pause')
-  pause(@Param('id') id: string) {
-    return this.campaigns.pause(id);
+  async pause(@Param('id') id: string) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_PAUSE, entityType: AuditEntityType.CAMPAIGN, entityId: id },
+      () => this.campaigns.pause(id),
+    );
   }
 
   @Post(':id/resume')
-  resume(@Param('id') id: string) {
-    return this.campaigns.resume(id);
+  async resume(@Param('id') id: string) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_RESUME, entityType: AuditEntityType.CAMPAIGN, entityId: id },
+      () => this.campaigns.resume(id),
+    );
   }
 
   @Post(':id/stop')
-  stop(@Param('id') id: string) {
-    return this.campaigns.stop(id);
+  async stop(@Param('id') id: string) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_STOP, entityType: AuditEntityType.CAMPAIGN, entityId: id },
+      () => this.campaigns.stop(id),
+    );
   }
 
   @Post(':id/retry')
-  retry(@Param('id') id: string) {
-    return this.campaigns.retryFailed(id);
+  async retry(@Param('id') id: string) {
+    return this.audit.auditAction(
+      { action: AuditAction.CAMPAIGN_RETRY, entityType: AuditEntityType.CAMPAIGN, entityId: id },
+      () => this.campaigns.retryFailed(id),
+    );
   }
 }

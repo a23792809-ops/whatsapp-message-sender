@@ -1,59 +1,29 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CampaignsService } from './campaigns.service.js';
+import { makeOrm, type Row } from '../../test/fake-orm.js';
 
-type Row = Record<string, any>;
-
-function makeApi(rows: Row[]) {
-  const store = rows;
-  return {
-    async all() {
-      return store.map((r) => ({ ...r }));
-    },
-    async createAll(list: Row[]) {
-      const created = list.map((v) => ({ ...v, id: v.id ?? Math.random().toString(36).slice(2, 10) }));
-      store.push(...created.map((c) => ({ ...c })));
-      return created.map((c) => ({ ...c }));
-    },
-    where(filter: Record<string, unknown>) {
-      const matched = () => store.filter((r) => Object.entries(filter).every(([k, v]) => r[k] === v));
-      return {
-        async update(values: Row) {
-          const rows = matched();
-          rows.forEach((r) => Object.assign(r, { ...r, ...values }));
-          return rows.map((r) => ({ ...r }));
-        },
-      };
-    },
-  };
-}
-
-function buildService(opts: {
-  campaigns: Row[];
-  messages: Row[];
-  customers: Row[];
+type Seed = {
+  campaigns?: Row[];
+  messages?: Row[];
+  customers?: Row[];
   send?: (mobile: string, content: string) => Promise<any>;
-}) {
-  const template = { id: 't1', body: 'Hello {{customer_name}}', metaName: null as any };
+};
+
+function buildService(opts: Seed) {
+  const campaigns = opts.campaigns ?? [];
+  const messages = opts.messages ?? [];
+  const customers = opts.customers ?? [];
+  const template = { id: 't1', body: 'Hello {{customer_name}}', metaName: null, metaLanguage: 'en' };
+
   const wa = {
-    sendText: vi.fn(opts.send ?? (async () => ({ ok: true, mode: 'dry', whatsappId: `dry` }))),
-    sendTemplate: vi.fn(async () => ({ ok: true, mode: 'dry', whatsappId: `dry` })),
+    sendText: vi.fn(opts.send ?? (async () => ({ ok: true, mode: 'dry', whatsappId: 'dry-id' }))),
+    sendTemplate: vi.fn(async () => ({ ok: true, mode: 'dry', whatsappId: 'dry-id' })),
   };
-  const templates = {
-    getById: async () => template,
-  };
-  const prisma = {
-    client: {
-      orm: {
-        public: {
-          Campaign: makeApi(opts.campaigns),
-          Message: makeApi(opts.messages),
-          Customer: makeApi(opts.customers),
-        },
-      },
-    },
-  };
+  const templates = { getById: vi.fn(async () => template) };
+  const prisma = { client: makeOrm({ Campaign: campaigns, Message: messages, Customer: customers }) };
   const svc = new CampaignsService(prisma as any, wa as any, templates as any);
-  return { svc, wa, template, campaigns: opts.campaigns, messages: opts.messages };
+
+  return { svc, wa, templates, template, campaigns, messages, customers };
 }
 
 async function until(fn: () => boolean, timeout = 4000) {
@@ -65,7 +35,7 @@ async function until(fn: () => boolean, timeout = 4000) {
   }
 }
 
-function runningCampaign(overrides: Row = {}) {
+function runningCampaign(overrides: Row = {}): Row {
   return {
     id: 'c1',
     name: 'Campaign 1',
@@ -76,11 +46,27 @@ function runningCampaign(overrides: Row = {}) {
     sent: 0,
     failed: 0,
     pending: 1,
+    createdAt: '2026-01-01T00:00:00Z',
     ...overrides,
   };
 }
 
-function customers() {
+function message(overrides: Row = {}): Row {
+  return {
+    id: 'm1',
+    campaignId: 'c1',
+    customerId: 'cu1',
+    mobile: '919876543210',
+    customerName: 'Ram',
+    content: '',
+    status: 'PENDING',
+    attemptCount: 0,
+    createdAt: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function customers(): Row[] {
   return [{ id: 'cu1', mobile: '919876543210', name: 'Ram', variables: null }];
 }
 
@@ -91,9 +77,7 @@ async function waitForRunnerToFinish(svc: CampaignsService, id = 'c1') {
 describe('CampaignsService restart recovery', () => {
   it('recovers a RUNNING campaign after service bootstrap', async () => {
     const campaigns = [runningCampaign()];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 0 },
-    ];
+    const messages = [message()];
     const { svc, wa } = buildService({ campaigns, messages, customers: customers() });
 
     await (svc as any).onApplicationBootstrap();
@@ -112,9 +96,7 @@ describe('CampaignsService restart recovery', () => {
 
   it('does not automatically resume a PAUSED campaign', async () => {
     const campaigns = [runningCampaign({ status: 'PAUSED' })];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 0 },
-    ];
+    const messages = [message()];
     const { svc, wa } = buildService({ campaigns, messages, customers: customers() });
 
     const result = await (svc as any).recoverRunning();
@@ -128,9 +110,7 @@ describe('CampaignsService restart recovery', () => {
 
   it('does not automatically resume a STOPPED campaign', async () => {
     const campaigns = [runningCampaign({ status: 'STOPPED' })];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 0 },
-    ];
+    const messages = [message()];
     const { svc, wa } = buildService({ campaigns, messages, customers: customers() });
 
     const result = await (svc as any).recoverRunning();
@@ -145,8 +125,16 @@ describe('CampaignsService restart recovery', () => {
   it('does not resend SENT messages and continues PENDING messages after recovery', async () => {
     const campaigns = [runningCampaign({ total: 2, pending: 1 })];
     const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: 'Hello Ram', status: 'SENT', attemptCount: 1, whatsappId: 'wam-existing' },
-      { id: 'm2', campaignId: 'c1', customerId: 'cu2', mobile: '919876543211', customerName: 'Shyam', content: '', status: 'PENDING', attemptCount: 2 },
+      message({ id: 'm1', status: 'SENT', attemptCount: 1, whatsappId: 'wam-existing', content: 'Hello Ram' }),
+      message({
+        id: 'm2',
+        customerId: 'cu2',
+        mobile: '919876543211',
+        customerName: 'Shyam',
+        status: 'PENDING',
+        attemptCount: 2,
+        createdAt: '2026-01-02T00:00:00Z',
+      }),
     ];
     const customersRows = [
       { id: 'cu1', mobile: '919876543210', name: 'Ram', variables: null },
@@ -176,9 +164,7 @@ describe('CampaignsService restart recovery', () => {
 
   it('never spawns a second runner on repeated recovery attempts', async () => {
     const campaigns = [runningCampaign({ throttleMs: 100 })];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 0 },
-    ];
+    const messages = [message()];
     const { svc, wa } = buildService({ campaigns, messages, customers: customers() });
 
     const first = await (svc as any).recoverRunning();
@@ -199,9 +185,7 @@ describe('CampaignsService restart recovery', () => {
     // attemptCount starts at 2 (one prior failed send before the restart),
     // so the last recovery attempt already hits the permanent-failure limit.
     const campaigns = [runningCampaign()];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 2 },
-    ];
+    const messages = [message({ attemptCount: 2 })];
     const send = async () => ({ ok: false, error: 'boom' });
     const { svc, wa } = buildService({ campaigns, messages, customers: customers(), send });
 
@@ -221,9 +205,7 @@ describe('CampaignsService restart recovery', () => {
 
   it('retries transient failures up to MAX_ATTEMPTS before failing permanently', async () => {
     const campaigns = [runningCampaign()];
-    const messages = [
-      { id: 'm1', campaignId: 'c1', customerId: 'cu1', mobile: '919876543210', customerName: 'Ram', content: '', status: 'PENDING', attemptCount: 1 },
-    ];
+    const messages = [message({ attemptCount: 1 })];
     const send = async () => ({ ok: false, error: 'transient' });
     const { svc, wa } = buildService({ campaigns, messages, customers: customers(), send });
 

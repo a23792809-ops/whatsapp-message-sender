@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { or } from '@prisma/orm-postgres/orm-client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
 import { TemplatesService } from '../templates/templates.service.js';
+import { clampPage, clampPageSize } from '../common/pagination.js';
 
 @Injectable()
 export class MessagesService {
@@ -140,12 +142,43 @@ export class MessagesService {
     };
   }
 
-  async list(limit = 100) {
+  /**
+   * Paginated message history.
+   *
+   * Filtering, counting and paging all happen in the database; rows are never
+   * loaded in full and sliced in JavaScript.
+   */
+  async list(params: { search?: string; status?: string; campaignId?: string; customerId?: string; page?: number; pageSize?: number } = {}) {
     const api = this.messageApi;
-    if (!api?.all) return [];
-    const q = typeof api.limit === 'function' ? api.limit(limit) : api;
-    const res = await q.all();
-    const arr = Array.isArray(res) ? res : await res;
-    return arr;
+    const page = clampPage(params.page);
+    const pageSize = clampPageSize(params.pageSize);
+    if (!api?.all) return { data: [], meta: { total: 0, page, pageSize, totalPages: 1 } };
+
+    const search = (params.search ?? '').trim();
+    const status = (params.status ?? '').trim().toUpperCase();
+    const campaignId = (params.campaignId ?? '').trim();
+    const customerId = (params.customerId ?? '').trim();
+
+    let collection: any = api;
+    if (status && status !== 'ALL') collection = collection.where((m: any) => m.status.eq(status));
+    if (campaignId) collection = collection.where((m: any) => m.campaignId.eq(campaignId));
+    if (customerId) collection = collection.where((m: any) => m.customerId.eq(customerId));
+    if (search) {
+      const like = `%${search}%`;
+      collection = collection.where((m: any) =>
+        or(m.customerName.ilike(like), m.mobile.ilike(like), m.content.ilike(like)),
+      );
+    }
+
+    const counted = await collection.aggregate((a: any) => ({ n: a.count() }));
+    const total = Number(counted?.n ?? 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const rows = await collection
+      .orderBy([(m: any) => m.createdAt.desc(), (m: any) => m.id.desc()])
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .all();
+
+    return { data: Array.isArray(rows) ? rows : await rows, meta: { total, page, pageSize, totalPages } };
   }
 }

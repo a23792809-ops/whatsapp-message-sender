@@ -9,23 +9,43 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { CustomersService } from './customers.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import { AuditAction, AuditEntityType } from '../audit/audit.types.js';
 
 @Controller('customers')
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Post('upload/preview')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   async uploadPreview(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException('No file uploaded (field name must be "file")');
-    return this.customers.previewFromBuffer(file.buffer, file.originalname);
+    // Only the filename and row tally are recorded, never the file contents.
+    return this.audit.auditAction(
+      {
+        action: AuditAction.CUSTOMER_IMPORT_PREVIEW,
+        entityType: AuditEntityType.CUSTOMER,
+        message: `preview of ${file.originalname}`,
+      },
+      () => this.customers.previewFromBuffer(file.buffer, file.originalname),
+    );
   }
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
   async upload(@UploadedFile() file: any) {
     if (!file) throw new BadRequestException('No file uploaded (field name must be "file")');
-    return this.customers.importFromBuffer(file.buffer, file.originalname);
+    return this.audit.auditAction(
+      {
+        action: AuditAction.CUSTOMER_IMPORT,
+        entityType: AuditEntityType.CUSTOMER,
+        message: `import of ${file.originalname}`,
+      },
+      () => this.customers.importFromBuffer(file.buffer, file.originalname),
+    );
   }
 
   @Get()
