@@ -45,7 +45,7 @@ describe('WhatsAppService', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sendText returns a dry-run id and never contacts Meta when mode is dry', async () => {
+  it('sendText still returns a dry-run id and never contacts Meta when mode is dry', async () => {
     const wa = makeService({ WHATSAPP_MODE: 'dry' });
     const res = await wa.sendText('9876543210', 'Hello');
     expect(res.ok).toBe(true);
@@ -54,11 +54,135 @@ describe('WhatsAppService', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sendText falls back to dry-run when credentials are missing', async () => {
+  // --- live mode fails closed -------------------------------------------
+  //
+  // Live mode with missing Meta credentials used to fall back to the dry-run
+  // simulator, which returned a fabricated `dry-…` id. A campaign reading that
+  // result could not tell "delivered" from "never sent", so live mode now
+  // rejects the send instead.
+
+  it('sendText fails closed when BOTH credentials are missing, without contacting Meta', async () => {
     const wa = makeService({ WHATSAPP_MODE: 'live' });
     const res = await wa.sendText('9876543210', 'Hello');
-    expect(res.mode).toBe('dry');
+
+    expect(res.ok).toBe(false);
+    expect(res.mode).toBe('text');
+    expect(res.error?.httpStatus).toBe(503);
+    expect(res.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+    expect(res.error?.message).toContain('WHATSAPP_PHONE_NUMBER_ID');
+    expect(res.error?.message).toContain('WHATSAPP_ACCESS_TOKEN');
+    // No simulated id: a fabricated success is exactly what we are preventing.
+    expect(res.whatsappId).toBeUndefined();
+    // No outbound request was attempted.
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sendText fails closed when only the phone number id is missing', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live', WHATSAPP_ACCESS_TOKEN: 'token-abc' });
+    const res = await wa.sendText('9876543210', 'Hello');
+
+    expect(res.ok).toBe(false);
+    expect(res.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+    expect(res.error?.message).toContain('WHATSAPP_PHONE_NUMBER_ID');
+    expect(res.error?.message).not.toContain('WHATSAPP_ACCESS_TOKEN');
+    expect(res.whatsappId).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sendText fails closed when only the access token is missing', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live', WHATSAPP_PHONE_NUMBER_ID: '123456' });
+    const res = await wa.sendText('9876543210', 'Hello');
+
+    expect(res.ok).toBe(false);
+    expect(res.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+    expect(res.error?.message).toContain('WHATSAPP_ACCESS_TOKEN');
+    expect(res.error?.message).not.toContain('WHATSAPP_PHONE_NUMBER_ID');
+    expect(res.whatsappId).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sendTemplate fails closed without credentials, without contacting Meta', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live' });
+    const res = await wa.sendTemplate('9876543210', { name: 'bharat_gas_delivery' });
+
+    expect(res.ok).toBe(false);
+    expect(res.mode).toBe('template');
+    expect(res.error?.httpStatus).toBe(503);
+    expect(res.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+    expect(res.whatsappId).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sendMessage routes through the fail-closed guard for both message types', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live' });
+
+    const text = await wa.sendMessage('9876543210', { type: 'text', body: 'Hello' });
+    expect(text.ok).toBe(false);
+    expect(text.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+
+    const template = await wa.sendMessage('9876543210', { type: 'template', name: 'bharat_gas_delivery' });
+    expect(template.ok).toBe(false);
+    expect(template.error?.type).toBe('WHATSAPP_NOT_CONFIGURED');
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('never leaks a credential value in the configuration error', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live', WHATSAPP_ACCESS_TOKEN: 'super-secret-token-value' });
+    const res = await wa.sendText('9876543210', 'Hello');
+
+    expect(res.ok).toBe(false);
+    expect(res.error?.message).not.toContain('super-secret-token-value');
+    expect(JSON.stringify(res)).not.toContain('super-secret-token-value');
+  });
+
+  it('reports live-without-credentials honestly in status()', async () => {
+    const wa = makeService({ WHATSAPP_MODE: 'live' });
+    const status = wa.status();
+
+    expect(status.mode).toBe('live');
+    // Not simulating any more, and not usable either.
+    expect(status.dryRun).toBe(false);
+    expect(status.configured).toBe(false);
+    // Still never exposes values.
+    expect(status.phoneNumberId).toBe('missing');
+    expect(status.accessToken).toBe('missing');
+  });
+
+  it('isDryRun reflects only the configured mode', () => {
+    expect(makeService({ WHATSAPP_MODE: 'dry' }).isDryRun()).toBe(true);
+    expect(makeService({}).isDryRun()).toBe(true);
+    expect(makeService({ WHATSAPP_MODE: 'live' }).isDryRun()).toBe(false);
+    expect(
+      makeService({ WHATSAPP_MODE: 'live', WHATSAPP_PHONE_NUMBER_ID: '1', WHATSAPP_ACCESS_TOKEN: 't' }).isDryRun(),
+    ).toBe(false);
+  });
+
+  it('live mode with both credentials still reaches the normal sender path', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [{ id: 'wamid.LIVE123' }] }),
+    });
+    const wa = makeService({
+      WHATSAPP_MODE: 'live',
+      WHATSAPP_PHONE_NUMBER_ID: '1234567890',
+      WHATSAPP_ACCESS_TOKEN: 'live-token',
+    });
+
+    const text = await wa.sendText('9876543210', 'Hello');
+    expect(text.ok).toBe(true);
+    expect(text.mode).toBe('text');
+    expect(text.whatsappId).toBe('wamid.LIVE123');
+
+    const template = await wa.sendTemplate('9876543210', { name: 'bharat_gas_delivery', parameters: ['A'] });
+    expect(template.ok).toBe(true);
+    expect(template.mode).toBe('template');
+    expect(template.whatsappId).toBe('wamid.LIVE123');
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/1234567890/messages');
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain('live-token');
   });
 
   it('sendText posts a text payload with normalized E.164 recipient and returns the WAMID', async () => {

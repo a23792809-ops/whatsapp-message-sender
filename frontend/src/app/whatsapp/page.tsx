@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Radio,
   AlertCircle,
+  AlertTriangle,
   Webhook,
 } from 'lucide-react';
 
@@ -116,6 +117,10 @@ export default function WhatsAppPage() {
 
   const isConfigured = status?.configured ?? false;
   const isDryRun = status?.dryRun ?? (status?.mode === 'dry' || !isConfigured);
+  // Live mode without Meta credentials fails closed: the backend rejects every
+  // send instead of simulating it. That is neither a working gateway nor the
+  // dry-run simulator, so it gets its own label rather than reading "LIVE".
+  const isLiveUnconfigured = !isDryRun && !isConfigured;
 
   return (
     <AppShell onRefresh={handleRefresh} isRefreshing={refreshing}>
@@ -190,12 +195,14 @@ export default function WhatsAppPage() {
                         <span className="text-sm font-semibold text-[#212529]">Engine Mode:</span>
                         <span
                           className={`text-sm font-bold px-3 py-1 rounded-full border ${
-                            isDryRun
-                              ? 'bg-[#FFDC02] text-[#212529] border-yellow-300'
-                              : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            isLiveUnconfigured
+                              ? 'bg-rose-50 text-rose-800 border-rose-200'
+                              : isDryRun
+                                ? 'bg-[#FFDC02] text-[#212529] border-yellow-300'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           }`}
                         >
-                          {isDryRun ? 'DRY-RUN SIMULATOR' : 'LIVE GATEWAY'}
+                          {isLiveUnconfigured ? 'NOT CONFIGURED' : isDryRun ? 'DRY-RUN SIMULATOR' : 'LIVE GATEWAY'}
                         </span>
                       </div>
 
@@ -275,6 +282,21 @@ export default function WhatsAppPage() {
                             delivery statuses will never update.
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {isLiveUnconfigured && (
+                      <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-900 space-y-1">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="h-4 w-4" />
+                          Live Mode Is Not Configured:
+                        </div>
+                        <p className="text-xs text-rose-900 leading-relaxed">
+                          <code className="bg-white/80 px-1 py-0.5 rounded border border-rose-200 font-mono">WHATSAPP_MODE=live</code>{' '}
+                          is set but the Meta credentials are missing, so every send is rejected and no message is
+                          delivered. Add the phone number ID and access token in <code className="bg-white/80 px-1 py-0.5 rounded border border-rose-200 font-mono">.env</code>, or
+                          switch to <code className="bg-white/80 px-1 py-0.5 rounded border border-rose-200 font-mono">WHATSAPP_MODE=dry</code> to use the simulator.
+                        </p>
                       </div>
                     )}
 

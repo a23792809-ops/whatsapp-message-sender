@@ -57,7 +57,17 @@ export function normalizeE164(value: string, countryCode: string = DEFAULT_COUNT
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    // Live mode is fail-closed, so a missing credential is a hard stop rather
+    // than a simulation. Warn loudly at boot: the failure is only observable
+    // when a send is attempted otherwise, which may be hours later.
+    if (this.mode === 'live' && !this.isConfigured) {
+      this.logger.error(
+        'WHATSAPP_MODE=live but Meta credentials are missing. Sends will be REJECTED, not simulated. ' +
+          'Set WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN, or set WHATSAPP_MODE=dry to use the simulator.',
+      );
+    }
+  }
 
   get mode(): string {
     return (this.config.get<string>('WHATSAPP_MODE') || 'dry').toLowerCase();
@@ -67,8 +77,59 @@ export class WhatsAppService {
     return this.phoneNumberId.length > 0 && this.accessToken.length > 0;
   }
 
+  /**
+   * Whether sends are simulated.
+   *
+   * This is now strictly a function of the configured mode. Live mode without
+   * credentials is NOT treated as a dry run: simulating there would return a
+   * fabricated `dry-…` message id that is indistinguishable from a real
+   * delivery, so campaign results would claim success while nothing was sent.
+   * Live mode fails closed instead — see {@link configurationError}.
+   */
   isDryRun(): boolean {
-    return this.mode !== 'live' || !this.isConfigured;
+    return this.mode !== 'live';
+  }
+
+  /** Names of the required Meta credentials that are absent. */
+  private missingCredentials(): string[] {
+    const missing: string[] = [];
+    if (!this.phoneNumberId) missing.push('WHATSAPP_PHONE_NUMBER_ID');
+    if (!this.accessToken) missing.push('WHATSAPP_ACCESS_TOKEN');
+    return missing;
+  }
+
+  /**
+   * The failure returned by every send path when live mode is selected but Meta
+   * credentials are missing.
+   *
+   * It deliberately reuses the existing structured `SendResult` error shape
+   * (same as an invalid number or a Meta API rejection) rather than throwing or
+   * inventing a new mechanism, so the campaign engine and the controller treat
+   * it through their normal failure paths and retry semantics are unchanged.
+   *
+   * Only the *names* of the missing environment variables appear; no credential
+   * value is read into the message. `httpStatus: 503` marks it as a service
+   * availability/configuration problem rather than a per-message problem.
+   */
+  private configurationError(mode: 'text' | 'template'): SendResult {
+    const missing = this.missingCredentials();
+    this.logger.error(
+      `WhatsApp send refused: WHATSAPP_MODE=live but ${missing.join(' and ')} ${
+        missing.length === 1 ? 'is' : 'are'
+      } not set. No outbound request was made.`,
+    );
+    return {
+      ok: false,
+      mode,
+      error: {
+        httpStatus: 503,
+        code: 0,
+        type: 'WHATSAPP_NOT_CONFIGURED',
+        message:
+          'WhatsApp is in live mode but the Meta credentials are not configured. ' +
+          `Missing environment variable(s): ${missing.join(', ')}. No message was sent.`,
+      },
+    };
   }
 
   private get countryCode(): string {
@@ -163,6 +224,9 @@ export class WhatsAppService {
   }
 
   async sendText(to: string, body: string, options: { previewUrl?: boolean } = {}): Promise<SendResult> {
+    // Fail closed before anything else: no normalization, no outbound request.
+    if (this.mode === 'live' && !this.isConfigured) return this.configurationError('text');
+
     if (this.isDryRun()) {
       this.logger.log(`[DRY] text to ${to}: ${body.slice(0, 60)}...`);
       return { ok: true, mode: 'dry', whatsappId: this.dryId() };
@@ -188,6 +252,9 @@ export class WhatsAppService {
   ): Promise<SendResult> {
     const language = options.language || this.config.get<string>('WHATSAPP_TEMPLATE_LANGUAGE') || 'en';
     const parameterCount = options.parameters?.length ?? 0;
+
+    // Fail closed before anything else: no template rendering, no outbound request.
+    if (this.mode === 'live' && !this.isConfigured) return this.configurationError('template');
 
     if (this.isDryRun()) {
       this.logger.log(`[DRY] template "${options.name}" (${language}) to ${to} with ${parameterCount} parameter(s)`);

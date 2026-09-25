@@ -4,17 +4,41 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module.js';
 import { AuthService } from './../src/auth/auth.service.js';
+import { WhatsAppService } from './../src/whatsapp/whatsapp.service.js';
+import { db } from './../src/prisma/db.js';
+
+/** Audit rows are a byproduct of the controller-level audit hooks. */
+type AuditRow = { id: string };
 
 describe('Request DTO validation (e2e)', () => {
   let app: INestApplication<App>;
   const fetchMock = vi.fn();
   let authCookie: string;
+  /**
+   * These specs deliberately reach past the DTO layer, so the audit hooks fire.
+   * Snapshot the ids that predate the run and drop only the new ones afterwards,
+   * leaving any real audit history untouched.
+   */
+  let preExistingAuditIds = new Set<string>();
+  let previousWhatsAppMode: string | undefined;
+  let previousPhoneNumberId: string | undefined;
+  let previousAccessToken: string | undefined;
 
   beforeAll(async () => {
     process.env.ADMIN_USERNAME = 'admin';
     process.env.ADMIN_PASSWORD_HASH = await AuthService.hashPassword('e2e-password');
     process.env.AUTH_SECRET = 'e2e-test-secret';
     process.env.AUTH_SESSION_HOURS = '168';
+    // Pin the delivery mode so this suite is hermetic. Without it the result
+    // depends on the developer's local .env: a machine configured with
+    // WHATSAPP_MODE=live and an empty access token now fails closed, which is
+    // the correct production behaviour but not what the DTO tests below assert.
+    previousWhatsAppMode = process.env.WHATSAPP_MODE;
+    process.env.WHATSAPP_MODE = 'dry';
+    previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    previousAccessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '';
+    process.env.WHATSAPP_ACCESS_TOKEN = '';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -29,6 +53,11 @@ describe('Request DTO validation (e2e)', () => {
     );
     await app.init();
 
+    const existingAudit = await db.orm.public.AuditLog.all();
+    preExistingAuditIds = new Set(
+      ((Array.isArray(existingAudit) ? existingAudit : []) as AuditRow[]).map((r) => r.id),
+    );
+
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ username: 'admin', password: 'e2e-password' })
@@ -42,6 +71,12 @@ describe('Request DTO validation (e2e)', () => {
     delete process.env.ADMIN_PASSWORD_HASH;
     delete process.env.AUTH_SECRET;
     delete process.env.AUTH_SESSION_HOURS;
+    if (previousWhatsAppMode === undefined) delete process.env.WHATSAPP_MODE;
+    else process.env.WHATSAPP_MODE = previousWhatsAppMode;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+    if (previousAccessToken === undefined) delete process.env.WHATSAPP_ACCESS_TOKEN;
+    else process.env.WHATSAPP_ACCESS_TOKEN = previousAccessToken;
   });
 
   beforeEach(() => {
@@ -131,6 +166,42 @@ describe('Request DTO validation (e2e)', () => {
     }
   });
 
+  it('POST /whatsapp/test fails closed with a configuration error when live mode has no credentials', async () => {
+    // Live mode without Meta credentials must not return a simulated success.
+    // Restored in a finally block so a failure here cannot leak into other tests.
+    const savedMode = process.env.WHATSAPP_MODE;
+    const savedPhoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const savedToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    process.env.WHATSAPP_MODE = 'live';
+    process.env.WHATSAPP_PHONE_NUMBER_ID = '';
+    process.env.WHATSAPP_ACCESS_TOKEN = '';
+
+    try {
+      const wa = app.get(WhatsAppService);
+      const res = await request(app.getHttpServer())
+        .post('/whatsapp/test')
+        .set('Cookie', authCookie)
+        .send({ to: '9876543210', message: 'Should not be sent' })
+        .expect(201);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.whatsappId).toBeUndefined();
+      expect(res.body.error).toMatchObject({ httpStatus: 503, type: 'WHATSAPP_NOT_CONFIGURED' });
+      expect(res.body.error.message).toContain('WHATSAPP_PHONE_NUMBER_ID');
+      expect(res.body.error.message).toContain('WHATSAPP_ACCESS_TOKEN');
+      // The endpoint still responds 2xx with a structured body rather than
+      // throwing, so the campaign engine can treat it as a normal send failure.
+      expect(wa.status().dryRun).toBe(false);
+      expect(wa.status().configured).toBe(false);
+      // Nothing was sent to Meta.
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      process.env.WHATSAPP_MODE = savedMode;
+      process.env.WHATSAPP_PHONE_NUMBER_ID = savedPhoneId;
+      process.env.WHATSAPP_ACCESS_TOKEN = savedToken;
+    }
+  });
+
   it('POST /campaigns with a valid body but non-existent template passes DTO validation and reaches service validation (404, not 400)', async () => {
     const res = await request(app.getHttpServer())
       .post('/campaigns')
@@ -143,5 +214,12 @@ describe('Request DTO validation (e2e)', () => {
       .expect(404);
     expect(res.body.message).toContain('Template');
     expect(res.body.message).toContain('not found');
+  });
+
+  afterAll(async () => {
+    const auditRows = await db.orm.public.AuditLog.all();
+    for (const row of (Array.isArray(auditRows) ? auditRows : []) as AuditRow[]) {
+      if (!preExistingAuditIds.has(row.id)) await db.orm.public.AuditLog.where({ id: row.id }).delete();
+    }
   });
 });
