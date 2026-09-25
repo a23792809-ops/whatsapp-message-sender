@@ -1,7 +1,7 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsObject, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { AI_LIMITS, LANGUAGE_PATTERN, SUPPORTED_PROVIDERS } from '../ai.types.js';
 
-export class ImproveAiDto {
+export class PersonalizeAiDto {
   @IsOptional()
   @IsIn(SUPPORTED_PROVIDERS)
   provider?: 'openai' | 'deepseek';
@@ -10,6 +10,10 @@ export class ImproveAiDto {
   @IsNotEmpty()
   @MaxLength(AI_LIMITS.maxMessageLength)
   message!: string;
+
+  /** Only this customer's known values. Values must be plain strings. */
+  @IsObject()
+  customer!: Record<string, string>;
 
   @IsOptional()
   @IsString()

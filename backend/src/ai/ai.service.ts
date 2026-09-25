@@ -9,9 +9,11 @@ import {
 import {
   AI_LIMITS,
   AiProviderError,
+  LANGUAGE_PATTERN,
   type AiDraftResult,
   type AiGenerateInput,
   type AiImproveInput,
+  type AiPersonalizeInput,
   type ChatMessage,
 } from './ai.types.js';
 import { ProviderRegistry } from './providers/provider.registry.js';
@@ -19,11 +21,16 @@ import { ProviderRegistry } from './providers/provider.registry.js';
 const VAR_REGEX = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
 const SYSTEM_PROMPT = [
-  'You are a professional WhatsApp copywriter for Bharat Gas LPG agencies in India.',
-  'Write short, warm, clear, personalized customer messages.',
-  'Preserve the exact template variable placeholders (e.g. {{customer_name}}, {{agency_name}}) exactly as written.',
-  'Never rename, translate, or omit a placeholder, and never invent data that was not provided.',
-  'Output only the final message text with no preamble, quotes, or explanations.',
+  'You are a business WhatsApp messaging assistant for Bharat Gas LPG agencies in India.',
+  'You draft short, warm, clear WhatsApp messages on behalf of a human operator.',
+  'Never invent customer facts. Do not invent or guess phone numbers, addresses, agency names, agency information, dates, amounts, or account details.',
+  'Only use values that were explicitly provided to you. If a detail is missing, leave a {{variable}} placeholder for the operator to fill in.',
+  'Preserve provided template variables such as {{customer_name}} exactly as written. Never rename, translate, spell-correct, or drop a placeholder.',
+  'Do not create deceptive, exaggerated, misleading, or legally risky claims. Do not promise prices, subsidies, discounts, refunds, or timelines that were not supplied.',
+  'Never state or imply that a message has been sent, scheduled, or delivered. You only produce text.',
+  'You must not send, schedule, or dispatch anything yourself, and you must not ask the operator to skip human review.',
+  'Return only the final message content, with no preamble, no quotes, no explanation, and no markdown fences.',
+  'Keep the output suitable for WhatsApp: plain text, short paragraphs, no subject line, no HTML.',
 ].join(' ');
 
 function extractVariables(text: string): string[] {
@@ -43,6 +50,8 @@ export class AiService {
   async generate(input: AiGenerateInput): Promise<AiDraftResult> {
     this.validateTemplate(input.template);
     this.validateCustomer(input.customer);
+    this.assertLanguage(input.language);
+    this.assertBusinessContext(input.businessContext);
     this.assertBudget(input);
 
     const expectedVariables = extractVariables(input.template);
@@ -53,15 +62,19 @@ export class AiService {
       customer: input.customer,
       instructions: input.instructions,
       tone: input.tone,
+      language: input.language,
+      businessContext: input.businessContext,
     });
 
     const result = await this.complete(input.provider, userPrompt);
-    this.assertVariablesPreserved('generate', expectedVariables, result.draft);
+    this.assertVariablesPreserved('generate', expectedVariables, result.content);
     return result;
   }
 
   async improve(input: AiImproveInput): Promise<AiDraftResult> {
     this.validateMessage(input.message);
+    this.assertLanguage(input.language);
+    this.assertBusinessContext(input.businessContext);
     this.assertBudget(input);
 
     const expectedVariables = extractVariables(input.message);
@@ -72,10 +85,41 @@ export class AiService {
       customer: undefined,
       instructions: input.instructions,
       tone: input.tone,
+      language: input.language,
+      businessContext: input.businessContext,
     });
 
     const result = await this.complete(input.provider, userPrompt);
-    this.assertVariablesPreserved('improve', expectedVariables, result.draft);
+    this.assertVariablesPreserved('improve', expectedVariables, result.content);
+    return result;
+  }
+
+  /**
+   * Rewrites a message for one specific customer using only that customer's
+   * known values. Placeholders backed by a supplied value are resolved; any
+   * placeholder left in the output stays visible so the operator can fill it.
+   */
+  async personalize(input: AiPersonalizeInput): Promise<AiDraftResult> {
+    this.validateMessage(input.message);
+    this.validateCustomer(input.customer);
+    this.assertLanguage(input.language);
+    this.assertBudget(input);
+
+    const sourceVariables = extractVariables(input.message);
+    const userPrompt = this.buildPrompt({
+      label: 'Rewrite the following WhatsApp message for one specific customer, merging the values provided below into the text.',
+      source: input.message,
+      sourceLabel: 'Existing message',
+      customer: input.customer,
+      instructions: input.instructions,
+      tone: input.tone,
+      language: input.language,
+      businessContext: input.businessContext,
+      allowSubstitution: true,
+    });
+
+    const result = await this.complete(input.provider, userPrompt);
+    this.assertNoInventedVariables('personalize', sourceVariables, input.customer, result.content);
     return result;
   }
 
@@ -97,7 +141,14 @@ export class AiService {
       `ai draft provider=${adapter.provider} model=${chat.model} chars=${chat.content.length} ms=${Date.now() - startedAt}`,
     );
 
-    return { provider: adapter.provider, model: chat.model, draft: chat.content, reviewRequired: true };
+    return {
+      provider: adapter.provider,
+      model: chat.model,
+      content: chat.content,
+      variables: extractVariables(chat.content),
+      usage: chat.usage,
+      reviewRequired: true,
+    };
   }
 
   private fromProviderError(e: unknown): Error {
@@ -124,17 +175,30 @@ export class AiService {
     customer?: Record<string, string>;
     instructions?: string;
     tone?: string;
+    language?: string;
+    businessContext?: string;
+    allowSubstitution?: boolean;
   }): string {
     const parts: string[] = [opts.label];
     if (opts.instructions?.trim()) parts.push(`Additional instructions: ${opts.instructions.trim()}`);
     if (opts.tone?.trim()) parts.push(`Tone: ${opts.tone.trim()}`);
+    if (opts.language?.trim()) parts.push(`Write the message in this language: ${opts.language.trim()}.`);
+    if (opts.businessContext?.trim()) {
+      parts.push(
+        `Business context (use only as background, do not invent further detail): ${opts.businessContext.trim()}`,
+      );
+    }
     parts.push('');
     parts.push(`${opts.sourceLabel}:`);
     parts.push(opts.source);
 
     if (opts.customer && Object.keys(opts.customer).length > 0) {
       parts.push('');
-      parts.push('Customer variables (personalize with them, but keep the {{variable}} placeholders in your output):');
+      parts.push(
+        opts.allowSubstitution
+          ? 'Customer values (use these exact values in the message where a matching {{variable}} appears):'
+          : 'Customer variables (personalize with them, but keep the {{variable}} placeholders in your output):',
+      );
       for (const [key, value] of Object.entries(opts.customer)) {
         parts.push(`${key}: ${value}`);
       }
@@ -142,7 +206,15 @@ export class AiService {
 
     parts.push('');
     parts.push('Rules:');
-    parts.push('- Preserve every {{variable}} placeholder exactly as written. Never rename, translate, or omit one.');
+    if (opts.allowSubstitution) {
+      parts.push(
+        '- Replace a {{variable}} placeholder with the matching customer value above. If no value was provided for it, keep the placeholder.',
+      );
+      parts.push('- Never introduce a placeholder name that was not in the source message.');
+    } else {
+      parts.push('- Preserve every {{variable}} placeholder exactly as written. Never rename, translate, or omit one.');
+    }
+    parts.push('- Do not invent any detail that is not present in the source message or the values above.');
     parts.push('- Output only the message text.');
     return parts.join('\n');
   }
@@ -169,6 +241,44 @@ export class AiService {
     if (!message || !message.trim()) throw new BadRequestException('message is required');
     if (message.length > AI_LIMITS.maxMessageLength) {
       throw new BadRequestException(`message exceeds max length of ${AI_LIMITS.maxMessageLength} characters`);
+    }
+  }
+
+  /**
+   * Personalize is allowed to resolve placeholders, but it must never conjure a
+   * placeholder the operator never asked for.
+   */
+  private assertNoInventedVariables(
+    mode: 'personalize',
+    sourceVariables: string[],
+    customer: Record<string, string>,
+    content: string,
+  ) {
+    const allowed = new Set([...sourceVariables, ...Object.keys(customer)]);
+    const invented = extractVariables(content).filter((v) => !allowed.has(v));
+    if (invented.length > 0) {
+      throw new BadRequestException(
+        `AI ${mode} introduced unknown template variable(s): ${invented.join(', ')}. Remove them and review before use.`,
+      );
+    }
+  }
+
+  private assertLanguage(language?: string) {
+    if (language === undefined) return;
+    if (language.length > AI_LIMITS.maxLanguageLength) {
+      throw new BadRequestException(`language exceeds max length of ${AI_LIMITS.maxLanguageLength} characters`);
+    }
+    if (language.trim() && !LANGUAGE_PATTERN.test(language.trim())) {
+      throw new BadRequestException('language must be a language tag such as "en" or "hi-IN"');
+    }
+  }
+
+  private assertBusinessContext(businessContext?: string) {
+    if (businessContext === undefined) return;
+    if (businessContext.length > AI_LIMITS.maxBusinessContextLength) {
+      throw new BadRequestException(
+        `businessContext exceeds max length of ${AI_LIMITS.maxBusinessContextLength} characters`,
+      );
     }
   }
 

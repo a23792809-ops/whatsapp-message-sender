@@ -220,27 +220,45 @@ export interface WhatsAppTestRequest {
   meta?: { template?: string; language?: string; parameterCount?: number };
 }
 
+/** Real token counts reported by the provider; null when it omitted usage. */
+export interface AiUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface AiDraftResponse {
   provider: 'openai' | 'deepseek';
   model: string;
-  draft: string;
+  /** The generated message text. Always a draft, never auto-sent. */
+  content: string;
+  /** Template placeholders present in the generated content. */
+  variables: string[];
+  /** null when the provider did not report usage. Never invented. */
+  usage: AiUsage | null;
   /** Always true: AI output is a draft that requires human review before sending. */
   reviewRequired: boolean;
 }
 
-export interface AiGenerateRequest {
+export interface AiSharedRequest {
   provider?: 'openai' | 'deepseek';
-  template: string;
-  customer: Record<string, string>;
   instructions?: string;
   tone?: string;
+  language?: string;
+  businessContext?: string;
 }
 
-export interface AiImproveRequest {
-  provider?: 'openai' | 'deepseek';
+export interface AiGenerateRequest extends AiSharedRequest {
+  template: string;
+  customer: Record<string, string>;
+}
+
+export interface AiImproveRequest extends AiSharedRequest {
   message: string;
-  instructions?: string;
-  tone?: string;
+}
+
+export interface AiPersonalizeRequest extends AiSharedRequest {
+  message: string;
+  customer: Record<string, string>;
 }
 
 export interface AuthUser {
@@ -384,6 +402,7 @@ export const api = {
   ai: {
     generate: (dto: AiGenerateRequest) => api.post<AiDraftResponse>('/ai/generate', dto),
     improve: (dto: AiImproveRequest) => api.post<AiDraftResponse>('/ai/improve', dto),
+    personalize: (dto: AiPersonalizeRequest) => api.post<AiDraftResponse>('/ai/personalize', dto),
   },
 
   auth: {

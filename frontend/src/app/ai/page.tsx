@@ -10,6 +10,7 @@ import {
   RotateCcw,
   Megaphone,
   User,
+  UserCheck,
   FileText,
   ShieldAlert,
   Loader2,
@@ -28,7 +29,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
-import { api, ApiError, type AiDraftResponse, type CustomerSummary, type TemplateSummary } from '@/lib/api';
+import { api, ApiError, type AiDraftResponse, type AiUsage, type CustomerSummary, type TemplateSummary } from '@/lib/api';
 
 const PROVIDER_OPTIONS = [
   { value: 'auto', label: 'Auto (default provider)' },
@@ -37,6 +38,19 @@ const PROVIDER_OPTIONS = [
 ] as const;
 
 const TONE_OPTIONS = ['Professional', 'Friendly', 'Formal', 'Concise', 'Urgent', 'No specific tone'] as const;
+
+const LANGUAGE_OPTIONS = [
+  { value: 'en', label: 'English' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'mr', label: 'Marathi' },
+  { value: 'gu', label: 'Gujarati' },
+  { value: 'ta', label: 'Tamil' },
+  { value: 'te', label: 'Telugu' },
+  { value: 'kn', label: 'Kannada' },
+  { value: 'bn', label: 'Bengali' },
+  { value: 'en-IN', label: 'English (India)' },
+  { value: 'hi-IN', label: 'Hindi (India)' },
+] as const;
 
 function extractTemplateVariables(body: string): string[] {
   const re = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
@@ -79,8 +93,9 @@ function mapAiError(err: unknown): string {
 
 export default function AiAssistantPage() {
   const [provider, setProvider] = useState<'auto' | 'openai' | 'deepseek'>('auto');
-  const [action, setAction] = useState<'generate' | 'improve'>('generate');
+  const [action, setAction] = useState<'generate' | 'improve' | 'personalize'>('generate');
   const [tone, setTone] = useState<string>(TONE_OPTIONS[0]);
+  const [language, setLanguage] = useState<string>('en');
   const [instructions, setInstructions] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [templateId, setTemplateId] = useState('');
@@ -95,7 +110,12 @@ export default function AiAssistantPage() {
   const [busyLabel, setBusyLabel] = useState('');
   const [draft, setDraft] = useState<string | null>(null);
   const [editedDraft, setEditedDraft] = useState('');
-  const [lastResult, setLastResult] = useState<{ provider: string; model: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{
+    provider: string;
+    model: string;
+    variables: string[];
+    usage: AiUsage | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedToCampaign, setCopiedToCampaign] = useState(false);
@@ -161,10 +181,21 @@ export default function AiAssistantPage() {
   }, []);
 
   const applyDraft = useCallback((res: AiDraftResponse) => {
-    setDraft(res.draft);
-    setEditedDraft(res.draft);
-    setLastResult({ provider: res.provider, model: res.model });
+    setDraft(res.content);
+    setEditedDraft(res.content);
+    setLastResult({ provider: res.provider, model: res.model, variables: res.variables ?? [], usage: res.usage ?? null });
   }, []);
+
+  /** Shared payload fields sent with every AI request. */
+  const sharedPayload = useMemo(
+    () => ({
+      provider: providerPayload,
+      instructions: instructions.trim() || undefined,
+      tone: tone === 'No specific tone' ? undefined : tone.toLowerCase(),
+      language: language || undefined,
+    }),
+    [providerPayload, instructions, tone, language],
+  );
 
   const runDraft = useCallback(
     async (regenerate: boolean) => {
@@ -189,11 +220,41 @@ export default function AiAssistantPage() {
         setBusyLabel(regenerate ? 'Regenerating your draft...' : 'Generating your draft...');
         try {
           const res = await api.ai.generate({
-            provider: providerPayload,
+            ...sharedPayload,
             template: selectedTemplate!.body,
             customer: customerVariables,
-            instructions: instructions.trim() || undefined,
-            tone: tone === 'No specific tone' ? undefined : tone.toLowerCase(),
+          });
+          applyDraft(res);
+        } catch (err) {
+          setError(mapAiError(err));
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+
+      // Personalize merges one customer's real values into an existing message.
+      if (action === 'personalize') {
+        if (!customerId) {
+          setError('Please select a customer to personalize for.');
+          return;
+        }
+        if (Object.keys(customerVariables).length === 0) {
+          setError('Selected customer has no personalization variables.');
+          return;
+        }
+        const source = (existingMessage.trim() || selectedTemplate?.body || '').trim();
+        if (!source) {
+          setError('Enter a message or pick a template to personalize.');
+          return;
+        }
+        setBusy(true);
+        setBusyLabel(regenerate ? 'Regenerating your draft...' : 'Personalizing your draft...');
+        try {
+          const res = await api.ai.personalize({
+            ...sharedPayload,
+            message: source,
+            customer: customerVariables,
           });
           applyDraft(res);
         } catch (err) {
@@ -212,10 +273,8 @@ export default function AiAssistantPage() {
       setBusyLabel(regenerate ? 'Regenerating your draft...' : 'Improving your draft...');
       try {
         const res = await api.ai.improve({
-          provider: providerPayload,
+          ...sharedPayload,
           message: existingMessage.trim(),
-          instructions: instructions.trim() || undefined,
-          tone: tone === 'No specific tone' ? undefined : tone.toLowerCase(),
         });
         applyDraft(res);
       } catch (err) {
@@ -224,7 +283,16 @@ export default function AiAssistantPage() {
         setBusy(false);
       }
     },
-    [action, templateId, customerId, customerVariables, instructions, tone, providerPayload, existingMessage, selectedTemplate, applyDraft],
+    [
+      action,
+      templateId,
+      customerId,
+      customerVariables,
+      existingMessage,
+      selectedTemplate,
+      sharedPayload,
+      applyDraft,
+    ],
   );
 
   const handleGenerate = useCallback(() => {
@@ -244,10 +312,8 @@ export default function AiAssistantPage() {
     setBusyLabel('Improving your draft...');
     try {
       const res = await api.ai.improve({
-        provider: providerPayload,
+        ...sharedPayload,
         message: editedDraft.trim(),
-        instructions: instructions.trim() || undefined,
-        tone: tone === 'No specific tone' ? undefined : tone.toLowerCase(),
       });
       applyDraft(res);
     } catch (err) {
@@ -255,7 +321,7 @@ export default function AiAssistantPage() {
     } finally {
       setBusy(false);
     }
-  }, [editedDraft, instructions, tone, providerPayload, applyDraft]);
+  }, [editedDraft, sharedPayload, applyDraft]);
 
   const handleCopy = useCallback(async () => {
     if (!editedDraft) return;
@@ -345,7 +411,7 @@ export default function AiAssistantPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">Action</label>
-              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
+              <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
                 <button
                   type="button"
                   onClick={() => setAction('generate')}
@@ -370,11 +436,25 @@ export default function AiAssistantPage() {
                   <Sparkles className="h-3.5 w-3.5" />
                   Improve
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setAction('personalize')}
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold transition-all ${
+                    action === 'personalize'
+                      ? 'bg-white shadow-sm text-[#007BC9]'
+                      : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  <UserCheck className="h-3.5 w-3.5" />
+                  Personalize
+                </button>
               </div>
               <p className="text-[11px] text-slate-500 mt-1.5">
                 {action === 'generate'
                   ? 'Generate a new message from a template, personalized for one customer.'
-                  : 'Rewrite an existing message to be clearer or more effective.'}
+                  : action === 'personalize'
+                    ? "Fill a message with one customer's real saved values, keeping every other placeholder for review."
+                    : 'Rewrite an existing message to be clearer or more effective.'}
               </p>
             </div>
 
@@ -389,6 +469,22 @@ export default function AiAssistantPage() {
                 {TONE_OPTIONS.map((t) => (
                   <option key={t} value={t}>
                     {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">Language</label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
+                aria-label="Language"
+              >
+                {LANGUAGE_OPTIONS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
                   </option>
                 ))}
               </select>
@@ -564,6 +660,13 @@ export default function AiAssistantPage() {
                 <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                   <Badge variant="primary">Provider: {lastResult.provider}</Badge>
                   <Badge variant="neutral">Model: {lastResult.model}</Badge>
+                  {lastResult.usage ? (
+                    <Badge variant="neutral">
+                      Tokens: {lastResult.usage.inputTokens} in / {lastResult.usage.outputTokens} out
+                    </Badge>
+                  ) : (
+                    <Badge variant="neutral">Usage not reported</Badge>
+                  )}
                 </div>
               )}
             </div>
@@ -630,6 +733,26 @@ export default function AiAssistantPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Shows the placeholders the AI returned so the operator can
+                    confirm none were silently replaced with invented data. */}
+                {lastResult && lastResult.variables.length > 0 && (
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-slate-500">Preserved variables:</span>
+                    {lastResult.variables.map((v) => (
+                      <Badge key={v} variant="neutral">
+                        {`{{${v}}}`}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {lastResult && lastResult.variables.length === 0 && (
+                  <p className="mt-3 text-[11px] text-slate-500">
+                    This draft contains no template placeholders. Double-check any names, dates or amounts
+                    before using it.
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-2.5 mt-4">
                   <button

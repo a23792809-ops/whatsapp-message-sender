@@ -1,6 +1,7 @@
 import {
   AiProviderError,
   type AIProvider,
+  type AiUsage,
   type ChatMessage,
   type ProviderAdapter,
   type ProviderChatResult,
@@ -75,7 +76,23 @@ export abstract class OpenAICompatProvider implements ProviderAdapter {
     }
 
     const model = typeof body?.model === 'string' && body.model.trim() ? body.model : this.model;
-    return { content: content.trim(), model };
+    return { content: content.trim(), model, usage: this.extractUsage(body) };
+  }
+
+  /**
+   * Only real provider-reported numbers are surfaced. When usage is missing or
+   * unusable we return null so the API never fabricates token counts.
+   */
+  private extractUsage(body: Record<string, any> | null): AiUsage | null {
+    const usage = body?.usage;
+    if (!usage || typeof usage !== 'object') return null;
+
+    const input = usage.prompt_tokens ?? usage.input_tokens;
+    const output = usage.completion_tokens ?? usage.output_tokens;
+    if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) return null;
+    if (typeof output !== 'number' || !Number.isFinite(output) || output < 0) return null;
+
+    return { inputTokens: Math.trunc(input), outputTokens: Math.trunc(output) };
   }
 
   private extractContent(body: Record<string, any> | null): string {

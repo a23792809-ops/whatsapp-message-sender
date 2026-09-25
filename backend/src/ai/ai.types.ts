@@ -21,18 +21,34 @@ export const AI_LIMITS = {
   maxToneLength: 100,
   maxCustomerKeys: 50,
   maxCustomerValueLength: 500,
+  maxLanguageLength: 32,
+  maxBusinessContextLength: 1000,
   maxTotalChars: 20_000,
   defaultTimeoutMs: 30_000,
 } as const;
+
+/**
+ * Language is free-form but constrained to a safe BCP-47-ish shape so it can be
+ * embedded in a prompt without smuggling arbitrary content.
+ */
+export const LANGUAGE_PATTERN = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$/;
 
 export interface ChatMessage {
   role: 'system' | 'user';
   content: string;
 }
 
+/** Real token counts reported by the provider. Never estimated or invented. */
+export interface AiUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ProviderChatResult {
   content: string;
   model: string;
+  /** null when the provider did not report usage; we never invent numbers. */
+  usage: AiUsage | null;
 }
 
 /**
@@ -62,22 +78,39 @@ export class AiProviderError extends Error {
 export interface AiDraftResult {
   provider: AIProvider;
   model: string;
-  draft: string;
-  /** AI output is always a review-required draft; it can never auto-send. */
+  /** The generated message text. Always a draft, never auto-sent. */
+  content: string;
+  /** Template placeholders found in the generated content. */
+  variables: string[];
+  /** Provider-reported token usage, or null when the provider omitted it. */
+  usage: AiUsage | null;
+  /** Always true: AI output requires human review before it can be used. */
   reviewRequired: true;
 }
 
-export interface AiGenerateInput {
+export interface AiSharedInput {
   provider?: AIProvider;
-  template: string;
-  customer: Record<string, string>;
   instructions?: string;
   tone?: string;
+  language?: string;
+  businessContext?: string;
 }
 
-export interface AiImproveInput {
-  provider?: AIProvider;
+export interface AiGenerateInput extends AiSharedInput {
+  template: string;
+  customer: Record<string, string>;
+}
+
+export interface AiImproveInput extends AiSharedInput {
   message: string;
-  instructions?: string;
-  tone?: string;
+}
+
+/**
+ * Rewrites an existing message for one specific customer by merging the values
+ * that customer actually has. Unlike generate/improve this intentionally
+ * substitutes the provided variables; it still refuses invented ones.
+ */
+export interface AiPersonalizeInput extends AiSharedInput {
+  message: string;
+  customer: Record<string, string>;
 }
