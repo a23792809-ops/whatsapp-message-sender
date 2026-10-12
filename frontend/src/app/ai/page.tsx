@@ -30,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { api, ApiError, type AiDraftResponse, type AiUsage, type CustomerSummary, type TemplateSummary } from '@/lib/api';
+import { extractTemplateVariables } from '@/lib/template-helpers';
 
 const PROVIDER_OPTIONS = [
   { value: 'auto', label: 'Auto (default provider)' },
@@ -51,16 +52,6 @@ const LANGUAGE_OPTIONS = [
   { value: 'en-IN', label: 'English (India)' },
   { value: 'hi-IN', label: 'Hindi (India)' },
 ] as const;
-
-function extractTemplateVariables(body: string): string[] {
-  const re = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
-  const found = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(body)) !== null) {
-    found.add(match[1]);
-  }
-  return Array.from(found);
-}
 
 function serverMessage(data: unknown): string | undefined {
   if (typeof data === 'string') return data;

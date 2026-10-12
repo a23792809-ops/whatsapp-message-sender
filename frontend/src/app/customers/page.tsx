@@ -15,6 +15,7 @@ import {
   TemplateSummary,
   UploadRowIssue,
 } from '@/lib/api';
+import { formatVariables } from '@/lib/customer-utils';
 import {
   Users,
   Upload,
@@ -201,17 +202,6 @@ export default function CustomersPage() {
       });
     } finally {
       setSendingQuickMessage(false);
-    }
-  };
-
-  const formatVariables = (jsonStr?: string | null): [string, string][] | null => {
-    if (!jsonStr) return null;
-    try {
-      const obj = JSON.parse(jsonStr);
-      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-      return Object.entries(obj).map(([k, v]) => [String(k), String(v)]);
-    } catch {
-      return null;
     }
   };
 

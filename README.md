@@ -464,10 +464,18 @@ npm run test:e2e       # vitest e2e (boots the app; requires a reachable databas
 
 ```bash
 cd frontend
+npm ci                 # install from the committed lockfile
 npm run build          # next build (production)
 npm run lint           # eslint
+npm test               # vitest unit/component tests (React Testing Library)
+npm run test:watch     # vitest in watch mode
 npm run start          # serve the production build after `build`
 ```
+
+The frontend test suite runs against `jsdom` with React Testing Library and does
+not contact the backend, Meta, OpenAI or DeepSeek. The GitHub Actions workflow
+`.github/workflows/frontend-ci.yml` installs with `npm ci` and runs lint, tests
+and the production build for changes under `frontend/`.
 
 ### Production startup
 
@@ -509,7 +517,7 @@ baked in, so it must be built with the production API URL, not at runtime.
 - **WhatsApp** — `text`‑only sends, no Meta message templates (see section 11).
 - **Inbound messages are not handled** — the webhook accepts and acknowledges them, but replies are not automated. See section 13.
 - **Settings UI** — values are persisted and served by the API, but the settings page does not yet edit them.
-- **Test coverage** — backend unit and API e2e suites exist and pass; there is no frontend test runner yet.
+- **Test coverage** — backend unit and API e2e suites exist and pass; the frontend now has an automated Vitest + React Testing Library suite (section 15) that is run by GitHub Actions on every frontend change.
 
 **Planned roadmap (priority order)**
 
@@ -523,7 +531,7 @@ baked in, so it must be built with the production API URL, not at runtime.
 8. ✔ Audit logging *(done — see section 13)*
 9. ✔ AI assistant (OpenAI + DeepSeek), review‑gated, with `/ai` UI *(done — see section 12)*; upcoming: approve‑to‑template flow
 10. ✔ Persistent settings *(done — see section 13)*
-11. ✔ Automated tests — backend service + API e2e *(done)*; remaining: frontend
+11. ✔ Automated tests — backend service + API e2e, plus frontend Vitest/React Testing Library with CI *(done — see section 15)*
 12. Production deployment prep (Docker/CI/env)
 13. Final end‑to‑end verification
 

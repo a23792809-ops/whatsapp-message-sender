@@ -12,6 +12,7 @@ import {
   CustomerSummary,
   TemplatePreviewResponse,
 } from '@/lib/api';
+import { extractTemplateVariables } from '@/lib/template-helpers';
 import {
   FileText,
   PlusCircle,
@@ -317,11 +318,8 @@ if (custRes.status === 'fulfilled') {
   };
 
   // Extract variables locally for badges
-  const getVariablesFromText = (text: string) => {
-    const matches = text.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g);
-    if (!matches) return [];
-    return Array.from(new Set(matches));
-  };
+  const getVariablesFromText = (text: string) =>
+    extractTemplateVariables(text).map((name) => `{{${name}}}`);
 
   return (
     <AppShell onRefresh={handleRefresh} isRefreshing={refreshing}>

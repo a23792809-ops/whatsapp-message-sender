@@ -10,6 +10,7 @@ import {
   api,
   MessageSummary,
 } from '@/lib/api';
+import { filterMessages } from '@/lib/campaign-utils';
 import {
   MessageSquare,
   Search,
@@ -78,27 +79,10 @@ export default function MessagesPage() {
   };
 
   // Filter messages
-  const filteredMessages = useMemo(() => {
-    return messages.filter((msg) => {
-      const matchSearch =
-        searchQuery === '' ||
-        msg.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        msg.mobile.includes(searchQuery) ||
-        (msg.whatsappId && msg.whatsappId.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (msg.content && msg.content.toLowerCase().includes(searchQuery.toLowerCase()));
-
-      const upperStatus = (msg.status || 'PENDING').toUpperCase();
-      const matchStatus =
-        statusFilter === 'ALL' ||
-        (statusFilter === 'SENT' && upperStatus === 'SENT') ||
-        (statusFilter === 'DELIVERED' && upperStatus === 'DELIVERED') ||
-        (statusFilter === 'READ' && upperStatus === 'READ') ||
-        (statusFilter === 'FAILED' && upperStatus === 'FAILED') ||
-        (statusFilter === 'PENDING' && upperStatus === 'PENDING');
-
-      return matchSearch && matchStatus;
-    });
-  }, [messages, searchQuery, statusFilter]);
+  const filteredMessages = useMemo(
+    () => filterMessages(messages, searchQuery, statusFilter),
+    [messages, searchQuery, statusFilter],
+  );
 
   // Statistics
   const totalCount = messages.length;

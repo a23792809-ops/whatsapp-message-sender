@@ -14,6 +14,8 @@ import {
   TemplateSummary,
   CampaignProgressResponse,
 } from '@/lib/api';
+import { calculateCampaignProgress, canPerformCampaignAction } from '@/lib/campaign-utils';
+import { filterCustomers } from '@/lib/customer-utils';
 import {
   Send,
   PlusCircle,
@@ -167,20 +169,10 @@ export default function CampaignsPage() {
   };
 
   // Customer filter inside wizard
-  const wizardFilteredCustomers = useMemo(() => {
-    return customers.filter((c) => {
-      const matchSearch =
-        customerSearch === '' ||
-        c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-        c.mobile.includes(customerSearch);
-      const matchStatus =
-        customerFilterStatus === 'ALL' ||
-        (customerFilterStatus === 'SENT' && (c.status === 'SENT' || c.status === 'COMPLETED')) ||
-        (customerFilterStatus === 'PENDING' && (c.status === 'PENDING' || !c.status)) ||
-        (customerFilterStatus === 'FAILED' && c.status === 'FAILED');
-      return matchSearch && matchStatus;
-    });
-  }, [customers, customerSearch, customerFilterStatus]);
+  const wizardFilteredCustomers = useMemo(
+    () => filterCustomers(customers, customerSearch, customerFilterStatus),
+    [customers, customerSearch, customerFilterStatus],
+  );
 
   // Toggle Single Customer Selection
   const toggleCustomer = (id: string) => {
@@ -355,11 +347,16 @@ export default function CampaignsPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {campaigns.map((camp) => {
-                      const processed = (camp.sent || 0) + (camp.failed || 0);
-                      const percent = camp.total > 0 ? Math.round((processed / camp.total) * 100) : 0;
-                      const isRunning = camp.status === 'RUNNING';
-                      const isPaused = camp.status === 'PAUSED';
-                      const isDraft = camp.status === 'DRAFT' || camp.status === 'QUEUED';
+                      const { processed, percent } = calculateCampaignProgress(
+                        camp.total,
+                        camp.sent,
+                        camp.failed,
+                      );
+                      const canStart = canPerformCampaignAction(camp.status, 'start');
+                      const canPause = canPerformCampaignAction(camp.status, 'pause');
+                      const canResume = canPerformCampaignAction(camp.status, 'resume');
+                      const canStop = canPerformCampaignAction(camp.status, 'stop');
+                      const canRetry = canPerformCampaignAction(camp.status, 'retry', camp.failed);
 
                       return (
                         <tr key={camp.id} className="hover:bg-slate-50/70 transition-colors">
@@ -415,7 +412,7 @@ export default function CampaignsPage() {
                               </button>
 
                               {/* Direct Action Buttons */}
-                              {isDraft && (
+                              {canStart && (
                                 <button
                                   onClick={() => handleCampaignAction(camp.id, 'start')}
                                   className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md transition-colors"
@@ -424,7 +421,7 @@ export default function CampaignsPage() {
                                   <Play className="h-3.5 w-3.5" />
                                 </button>
                               )}
-                              {isRunning && (
+                              {canPause && (
                                 <button
                                   onClick={() => handleCampaignAction(camp.id, 'pause')}
                                   className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-md transition-colors"
@@ -433,7 +430,7 @@ export default function CampaignsPage() {
                                   <Pause className="h-3.5 w-3.5" />
                                 </button>
                               )}
-                              {isPaused && (
+                              {canResume && (
                                 <button
                                   onClick={() => handleCampaignAction(camp.id, 'resume')}
                                   className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md transition-colors"
@@ -442,7 +439,7 @@ export default function CampaignsPage() {
                                   <Play className="h-3.5 w-3.5" />
                                 </button>
                               )}
-                              {(isRunning || isPaused) && (
+                              {canStop && (
                                 <button
                                   onClick={() => handleCampaignAction(camp.id, 'stop')}
                                   className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md transition-colors"
@@ -451,7 +448,7 @@ export default function CampaignsPage() {
                                   <Ban className="h-3.5 w-3.5" />
                                 </button>
                               )}
-                              {camp.failed > 0 && (
+                              {canRetry && (
                                 <button
                                   onClick={() => handleCampaignAction(camp.id, 'retry')}
                                   className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-md transition-colors"
@@ -886,7 +883,7 @@ export default function CampaignsPage() {
 
                 {/* Control Actions */}
                 <div className="flex items-center gap-2">
-                  {(monitoredCampaign.status === 'DRAFT' || monitoredCampaign.status === 'QUEUED') && (
+                  {canPerformCampaignAction(monitoredCampaign.status, 'start') && (
                     <button
                       disabled={actionLoading}
                       onClick={() => handleCampaignAction(monitoredCampaign.id, 'start')}
@@ -895,7 +892,7 @@ export default function CampaignsPage() {
                       <Play className="h-3.5 w-3.5" /> Start
                     </button>
                   )}
-                  {monitoredCampaign.status === 'RUNNING' && (
+                  {canPerformCampaignAction(monitoredCampaign.status, 'pause') && (
                     <button
                       disabled={actionLoading}
                       onClick={() => handleCampaignAction(monitoredCampaign.id, 'pause')}
@@ -904,7 +901,7 @@ export default function CampaignsPage() {
                       <Pause className="h-3.5 w-3.5" /> Pause
                     </button>
                   )}
-                  {monitoredCampaign.status === 'PAUSED' && (
+                  {canPerformCampaignAction(monitoredCampaign.status, 'resume') && (
                     <button
                       disabled={actionLoading}
                       onClick={() => handleCampaignAction(monitoredCampaign.id, 'resume')}
@@ -913,7 +910,7 @@ export default function CampaignsPage() {
                       <Play className="h-3.5 w-3.5" /> Resume
                     </button>
                   )}
-                  {(monitoredCampaign.status === 'RUNNING' || monitoredCampaign.status === 'PAUSED') && (
+                  {canPerformCampaignAction(monitoredCampaign.status, 'stop') && (
                     <button
                       disabled={actionLoading}
                       onClick={() => handleCampaignAction(monitoredCampaign.id, 'stop')}
@@ -922,7 +919,7 @@ export default function CampaignsPage() {
                       <Ban className="h-3.5 w-3.5" /> Stop
                     </button>
                   )}
-                  {monitoredCampaign.failed > 0 && (
+                  {canPerformCampaignAction(monitoredCampaign.status, 'retry', monitoredCampaign.failed) && (
                     <button
                       disabled={actionLoading}
                       onClick={() => handleCampaignAction(monitoredCampaign.id, 'retry')}
@@ -940,13 +937,11 @@ export default function CampaignsPage() {
                   <span>Broadcast Completion</span>
                   <span className="font-mono text-orange-600">
                     {monitorProgress?.percentage ??
-                      (monitoredCampaign.total > 0
-                        ? Math.round(
-                            (((monitoredCampaign.sent || 0) + (monitoredCampaign.failed || 0)) /
-                              monitoredCampaign.total) *
-                              100
-                          )
-                        : 0)}
+                      calculateCampaignProgress(
+                        monitoredCampaign.total,
+                        monitoredCampaign.sent,
+                        monitoredCampaign.failed,
+                      ).percent}
                     %
                   </span>
                 </div>
@@ -956,13 +951,11 @@ export default function CampaignsPage() {
                     style={{
                       width: `${
                         monitorProgress?.percentage ??
-                        (monitoredCampaign.total > 0
-                          ? Math.round(
-                              (((monitoredCampaign.sent || 0) + (monitoredCampaign.failed || 0)) /
-                                monitoredCampaign.total) *
-                                100
-                            )
-                          : 0)
+                        calculateCampaignProgress(
+                          monitoredCampaign.total,
+                          monitoredCampaign.sent,
+                          monitoredCampaign.failed,
+                        ).percent
                       }%`,
                     }}
                   />
