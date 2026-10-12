@@ -319,6 +319,121 @@ describe('WhatsAppService', () => {
     const res = await wa.sendText('12', 'hi');
     expect(res.ok).toBe(false);
     expect(res.error?.httpStatus).toBe(400);
+    // A malformed number is permanent: retrying the same digits is pointless.
+    expect(res.error?.retryable).toBe(false);
+    expect(res.error?.kind).toBe('invalid_recipient');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // --- retry classification --------------------------------------------------
+  //
+  // The campaign engine consults `error.retryable` before spending another
+  // attempt. These tests pin the classification on both sides of the line so a
+  // future change cannot silently start re-sending messages Meta already
+  // refused (or already accepted before a timeout).
+
+  function liveService() {
+    return makeService({
+      WHATSAPP_MODE: 'live',
+      WHATSAPP_PHONE_NUMBER_ID: '555',
+      WHATSAPP_ACCESS_TOKEN: 'tok',
+    });
+  }
+
+  it('classifies a 429 as a retryable rate limit and surfaces Retry-After', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: { get: (key: string) => (key.toLowerCase() === 'retry-after' ? '2' : null) },
+      json: async () => ({ error: { message: 'Rate limit reached', code: 4 } }),
+    });
+
+    const res = await liveService().sendText('9876543210', 'Hi');
+    expect(res.ok).toBe(false);
+    expect(res.error?.kind).toBe('rate_limited');
+    expect(res.error?.retryable).toBe(true);
+    expect(res.error?.retryAfterMs).toBe(2000);
+  });
+
+  it('classifies a 500 as a retryable server error', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: { message: 'Meta unavailable', code: 1 } }),
+    });
+
+    const res = await liveService().sendText('9876543210', 'Hi');
+    expect(res.error?.kind).toBe('server');
+    expect(res.error?.retryable).toBe(true);
+  });
+
+  it('classifies 401/403 as a non-retryable auth error', async () => {
+    for (const status of [401, 403]) {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status,
+        json: async () => ({ error: { message: 'Invalid OAuth access token', code: 190 } }),
+      });
+      const res = await liveService().sendText('9876543210', 'Hi');
+      expect(res.error?.kind).toBe('auth');
+      expect(res.error?.retryable).toBe(false);
+    }
+  });
+
+  it('classifies a 400 rejection as a non-retryable client error', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { message: 'Invalid parameter', code: 100 } }),
+    });
+
+    const res = await liveService().sendText('9876543210', 'Hi');
+    expect(res.error?.kind).toBe('client');
+    expect(res.error?.retryable).toBe(false);
+  });
+
+  it('aborts a hung Meta request after the configured timeout and marks it non-retryable', async () => {
+    // A fetch that never resolves on its own: only the timeout can end it.
+    fetchMock.mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          (init.signal as AbortSignal).addEventListener('abort', () =>
+            reject((init.signal as AbortSignal).reason),
+          );
+        }),
+    );
+    const wa = makeService({
+      WHATSAPP_MODE: 'live',
+      WHATSAPP_PHONE_NUMBER_ID: '555',
+      WHATSAPP_ACCESS_TOKEN: 'tok',
+      WHATSAPP_REQUEST_TIMEOUT_MS: '10',
+    });
+
+    const res = await wa.sendText('9876543210', 'Hi');
+    expect(res.ok).toBe(false);
+    expect(res.error?.kind).toBe('timeout');
+    // Delivery state is unknown, so a retry could duplicate the message.
+    expect(res.error?.retryable).toBe(false);
+    expect(res.error?.message).toContain('request aborted');
+  });
+
+  it('classifies a dropped connection as a non-retryable network error', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+    const res = await liveService().sendText('9876543210', 'Hi');
+    expect(res.ok).toBe(false);
+    expect(res.error?.kind).toBe('network');
+    expect(res.error?.retryable).toBe(false);
+    expect(res.error?.message).toBe('fetch failed');
+  });
+
+  it('reports the effective request timeout in status() and defaults it sensibly', () => {
+    expect(makeService({}).status().requestTimeoutMs).toBe(15_000);
+    // Non-numeric and sub-1 values fall back to the default.
+    expect(makeService({ WHATSAPP_REQUEST_TIMEOUT_MS: 'abc' }).status().requestTimeoutMs).toBe(15_000);
+    expect(makeService({ WHATSAPP_REQUEST_TIMEOUT_MS: '0' }).status().requestTimeoutMs).toBe(15_000);
+    // A usable value is honoured; an absurd one is capped.
+    expect(makeService({ WHATSAPP_REQUEST_TIMEOUT_MS: '8000' }).status().requestTimeoutMs).toBe(8000);
+    expect(makeService({ WHATSAPP_REQUEST_TIMEOUT_MS: '999999999' }).status().requestTimeoutMs).toBe(120_000);
   });
 });

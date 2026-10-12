@@ -3,7 +3,37 @@ import { ConfigService } from '@nestjs/config';
 
 export const DEFAULT_COUNTRY_CODE = '91';
 
+/**
+ * How long to wait for Meta to answer before aborting the request.
+ *
+ * Without a ceiling a hung connection stalls the campaign runner: a single
+ * unresponsive socket would hold the in-process loop open forever. The value is
+ * overridable with WHATSAPP_REQUEST_TIMEOUT_MS and hard-capped.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+const MAX_REQUEST_TIMEOUT_MS = 120_000;
+
 export type WhatsAppMode = 'dry' | 'text' | 'template';
+
+/**
+ * Coarse classification of a send failure, so callers can decide whether a
+ * retry is even worth attempting.
+ *
+ * The distinction that matters is `retryable`. A permanent rejection (bad
+ * recipient, bad credentials) will fail identically however many times it is
+ * tried, so retrying only burns the attempt budget. An ambiguous failure — a
+ * timeout or a dropped connection — may have been accepted by Meta before the
+ * response was lost, so a blind retry can deliver the same message twice.
+ */
+export type WhatsAppErrorKind =
+  | 'not_configured'
+  | 'invalid_recipient'
+  | 'rate_limited'
+  | 'server'
+  | 'auth'
+  | 'client'
+  | 'timeout'
+  | 'network';
 
 export type WhatsAppApiError = {
   httpStatus?: number;
@@ -13,6 +43,20 @@ export type WhatsAppApiError = {
   message?: string;
   fbtraceId?: string;
   raw?: unknown;
+  /** Coarse failure class; see {@link WhatsAppErrorKind}. */
+  kind?: WhatsAppErrorKind;
+  /**
+   * Whether a retry could plausibly succeed. `false` is a promise that
+   * retrying is pointless or unsafe; `undefined` means "unknown" and callers
+   * should keep their existing behaviour.
+   */
+  retryable?: boolean;
+  /**
+   * Meta's requested backoff from a `Retry-After` header (ms), present only on
+   * a 429 rate-limit response. Callers should wait at least this long before
+   * the next attempt.
+   */
+  retryAfterMs?: number;
 };
 
 export type SendResult = {
@@ -105,7 +149,11 @@ export class WhatsAppService {
    * It deliberately reuses the existing structured `SendResult` error shape
    * (same as an invalid number or a Meta API rejection) rather than throwing or
    * inventing a new mechanism, so the campaign engine and the controller treat
-   * it through their normal failure paths and retry semantics are unchanged.
+   * it through their normal failure paths.
+   *
+   * It is marked non-retryable: a missing credential is a configuration fault
+   * that no amount of retrying will fix, so a campaign should stop burning its
+   * attempt budget and surface the message as FAILED immediately.
    *
    * Only the *names* of the missing environment variables appear; no credential
    * value is read into the message. `httpStatus: 503` marks it as a service
@@ -125,6 +173,8 @@ export class WhatsAppService {
         httpStatus: 503,
         code: 0,
         type: 'WHATSAPP_NOT_CONFIGURED',
+        kind: 'not_configured',
+        retryable: false,
         message:
           'WhatsApp is in live mode but the Meta credentials are not configured. ' +
           `Missing environment variable(s): ${missing.join(', ')}. No message was sent.`,
@@ -134,6 +184,17 @@ export class WhatsAppService {
 
   private get countryCode(): string {
     return this.config.get<string>('WHATSAPP_COUNTRY_CODE') || DEFAULT_COUNTRY_CODE;
+  }
+
+  /**
+   * Per-request timeout for the Meta Graph API call. Values below 1 or
+   * non-numeric fall back to the default; anything above the cap is clamped so
+   * a fat-fingered environment value cannot effectively disable the timeout.
+   */
+  private get requestTimeoutMs(): number {
+    const raw = Number(this.config.get<string>('WHATSAPP_REQUEST_TIMEOUT_MS'));
+    if (!Number.isFinite(raw) || raw < 1) return DEFAULT_REQUEST_TIMEOUT_MS;
+    return Math.min(Math.floor(raw), MAX_REQUEST_TIMEOUT_MS);
   }
 
   private get apiVersion(): string {
@@ -159,9 +220,42 @@ export class WhatsAppService {
       error: {
         httpStatus: 400,
         code: 0,
+        kind: 'invalid_recipient',
+        // A malformed number is a data problem: the same digits will be
+        // malformed on every retry.
+        retryable: false,
         message: 'Invalid recipient phone number; expected an E.164 number (10-15 digits)',
       },
     };
+  }
+
+  /**
+   * Decide whether an HTTP error response can be retried and how to classify
+   * it.
+   *
+   *  - 429 (rate limited) and 5xx (Meta-side outage) are transient: the request
+   *    was refused, not accepted, so retrying is safe and useful.
+   *  - 401/403 are credential/authorization faults and 4xx (other) are request
+   *    faults: Meta rejected the message and will keep rejecting it.
+   */
+  private classifyHttpError(status: number): { kind: WhatsAppErrorKind; retryable: boolean } {
+    if (status === 429) return { kind: 'rate_limited', retryable: true };
+    if (status >= 500) return { kind: 'server', retryable: true };
+    if (status === 401 || status === 403) return { kind: 'auth', retryable: false };
+    return { kind: 'client', retryable: false };
+  }
+
+  /**
+   * Read Meta's `Retry-After` header (seconds) on a 429. The HTTP-date form is
+   * ignored: the campaign already applies its own throttle, and parsing dates
+   * adds risk for little benefit.
+   */
+  private parseRetryAfter(res: Response): number | undefined {
+    const raw = res.headers?.get?.('retry-after');
+    if (!raw) return undefined;
+    const seconds = Number(raw.trim());
+    if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+    return Math.round(seconds * 1000);
   }
 
   private parseError(httpStatus: number, json: unknown): WhatsAppApiError {
@@ -193,6 +287,14 @@ export class WhatsAppService {
     payload: Record<string, unknown>,
   ): Promise<{ ok: boolean; whatsappId?: string; error?: WhatsAppApiError | null; raw?: unknown }> {
     const url = `https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/messages`;
+    const timeoutMs = this.requestTimeoutMs;
+
+    // Bound the whole exchange (connect, send, and response body). A timer that
+    // cancels the request means a hung Meta endpoint can never wedge the
+    // campaign runner.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    (timer as unknown as { unref?: () => void }).unref?.();
 
     try {
       const res = await fetch(url, {
@@ -202,13 +304,20 @@ export class WhatsAppService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       const json: any = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         const error = this.parseError(res.status, json);
+        const { kind, retryable } = this.classifyHttpError(res.status);
+        error.kind = kind;
+        error.retryable = retryable;
+        if (kind === 'rate_limited') {
+          error.retryAfterMs = this.parseRetryAfter(res);
+        }
         this.logger.error(
-          `WhatsApp API HTTP ${res.status} code=${error?.code ?? 'n/a'} message=${error?.message ?? 'n/a'}`,
+          `WhatsApp API HTTP ${res.status} code=${error?.code ?? 'n/a'} kind=${kind} message=${error?.message ?? 'n/a'}`,
         );
         return { ok: false, error, raw: json };
       }
@@ -217,9 +326,20 @@ export class WhatsAppService {
       this.logger.log(`WhatsApp API accepted message id=${wamid ?? 'n/a'}`);
       return { ok: true, whatsappId: typeof wamid === 'string' ? wamid : undefined, raw: json };
     } catch (e) {
-      const message = (e as Error).message;
-      this.logger.error(`WhatsApp network error: ${message}`);
-      return { ok: false, error: { httpStatus: 0, message } };
+      // We cannot tell whether an aborted or dropped request was processed by
+      // Meta before the response was lost, so it is classified as NOT
+      // retryable: re-sending could deliver the same message twice. The
+      // operator keeps the explicit "retry failed" action for a deliberate
+      // resend.
+      const timedOut = controller.signal.aborted;
+      const kind: WhatsAppErrorKind = timedOut ? 'timeout' : 'network';
+      const message = timedOut
+        ? `No response from Meta within ${timeoutMs}ms; request aborted. Delivery state is unknown.`
+        : (e as Error).message;
+      this.logger.error(`WhatsApp ${kind} error: ${message}`);
+      return { ok: false, error: { httpStatus: 0, kind, retryable: false, message } };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -319,6 +439,7 @@ export class WhatsAppService {
       accessToken: this.accessToken ? '***set***' : 'missing',
       apiVersion: this.apiVersion,
       countryCode: this.countryCode,
+      requestTimeoutMs: this.requestTimeoutMs,
     };
   }
 }

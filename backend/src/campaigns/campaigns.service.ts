@@ -7,6 +7,12 @@ const MAX_ATTEMPTS = 3;
 const DEFAULT_THROTTLE_MS = 19000;
 const MIN_THROTTLE_MS = 5000;
 
+/**
+ * Upper bound on a provider-requested (`Retry-After`) backoff. A hostile or
+ * buggy value must not be able to park a campaign for an unbounded time.
+ */
+const MAX_RETRY_AFTER_MS = 5 * 60 * 1000;
+
 const STATUS = {
   DRAFT: 'DRAFT',
   QUEUED: 'QUEUED',
@@ -88,6 +94,14 @@ type EngineState = {
   /** Resolves the in-flight throttle sleep early; null when not sleeping. */
   wake: (() => void) | null;
 };
+
+/**
+ * Outcome of one delivery attempt. `attempted` says whether a real WhatsApp
+ * send was made (the runner only throttles between real attempts).
+ * `retryAfterMs` carries a provider-requested backoff from a 429 so the runner
+ * can wait at least that long before trying again.
+ */
+type DeliverOutcome = { attempted: boolean; retryAfterMs?: number };
 
 @Injectable()
 export class CampaignsService {
@@ -560,12 +574,12 @@ export class CampaignsService {
           continue;
         }
 
-        const { attempted } = await this.deliver(msg, run, state);
+        const outcome = await this.deliver(msg, run, state);
         await this.syncCounters(campaignId);
 
         // A message that was blocked before delivery (missing customer,
         // unresolved variable) owes no throttle: nothing was sent to Meta.
-        if (!attempted) continue;
+        if (!outcome.attempted) continue;
         if (this.haltReason(state)) break;
 
         // Look ahead before sleeping. The throttle separates two send
@@ -578,7 +592,11 @@ export class CampaignsService {
           break;
         }
 
-        await this.sleepInterruptible(run.throttleMs, state);
+        // Honour a provider-requested backoff (Retry-After on a 429) on top of
+        // the campaign throttle, so a rate-limited send is not retried before
+        // Meta will accept it.
+        const backoff = Math.min(outcome.retryAfterMs ?? 0, MAX_RETRY_AFTER_MS);
+        await this.sleepInterruptible(Math.max(run.throttleMs, backoff), state);
       }
     } catch (e) {
       // An engine-level fault (unreadable template, database error) is not a
@@ -603,7 +621,7 @@ export class CampaignsService {
     msg: any,
     run: CampaignRun,
     state: EngineState,
-  ): Promise<{ attempted: boolean }> {
+  ): Promise<DeliverOutcome> {
     if (this.haltReason(state)) return { attempted: false };
 
     // One customer lookup by primary key instead of scanning every customer.
@@ -664,16 +682,25 @@ export class CampaignsService {
       return { attempted: true };
     }
 
-    // Keep the latest meaningful error and only stay retryable while there is
-    // budget left; otherwise the message settles as FAILED for good.
+    // The sender classifies each failure. `retryable: false` covers both
+    // permanent rejections (bad recipient, bad credentials) and ambiguous
+    // outcomes (a timeout or dropped connection, where Meta may already have
+    // accepted the message — re-sending could deliver it twice). Either way the
+    // message settles as FAILED after this attempt rather than burning the
+    // budget; an operator keeps the explicit "retry failed" action for a
+    // deliberate resend.
+    const error = result.error as { retryable?: boolean; retryAfterMs?: number } | null | undefined;
+    const nonRetryable = error?.retryable === false;
     const exhausted = attemptCount >= MAX_ATTEMPTS;
+    const described = this.describeSendError(result.error);
+
     await this.updateMessage(msg.id, {
       content: rendered,
-      status: exhausted ? MESSAGE_STATUS.FAILED : MESSAGE_STATUS.PENDING,
-      error: this.describeSendError(result.error),
+      status: exhausted || nonRetryable ? MESSAGE_STATUS.FAILED : MESSAGE_STATUS.PENDING,
+      error: nonRetryable && !exhausted ? `${described} (not retryable)` : described,
       attemptCount,
     });
-    return { attempted: true };
+    return { attempted: true, retryAfterMs: nonRetryable ? undefined : error?.retryAfterMs };
   }
 
   /**

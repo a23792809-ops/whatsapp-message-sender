@@ -608,6 +608,99 @@ describe('message processing and counters', () => {
   });
 });
 
+describe('retry eligibility', () => {
+  it('12. a non-retryable failure settles as FAILED after a single attempt', async () => {
+    const c = campaign({ throttleMs: 5 });
+    const h = harness({
+      campaigns: [c],
+      messages: [message(c.id)],
+      customers: [customer('cu1')],
+      send: async () => ({
+        ok: false,
+        error: {
+          httpStatus: 400,
+          code: 131030,
+          message: 'Recipient not in allowed list',
+          kind: 'client',
+          retryable: false,
+        },
+      }),
+    });
+
+    await h.svc.start(c.id);
+    await waitForIdle(h, c.id);
+
+    // One attempt only: the same request would be rejected identically.
+    expect(h.wa.sendText).toHaveBeenCalledTimes(1);
+    expect(h.messages[0].attemptCount).toBe(1);
+    expect(h.messages[0].status).toBe('FAILED');
+    expect(h.messages[0].error).toBe('http=400 code=131030 Recipient not in allowed list (not retryable)');
+    expect(c).toMatchObject({ status: 'COMPLETED', sent: 0, failed: 1, pending: 0 });
+  });
+
+  it('13. an ambiguous timeout is not re-sent, because the message may already have gone out', async () => {
+    const c = campaign({ throttleMs: 5 });
+    const h = harness({
+      campaigns: [c],
+      messages: [message(c.id)],
+      customers: [customer('cu1')],
+      send: async () => ({
+        ok: false,
+        error: {
+          httpStatus: 0,
+          kind: 'timeout',
+          retryable: false,
+          message: 'No response from Meta within 15000ms; request aborted. Delivery state is unknown.',
+        },
+      }),
+    });
+
+    await h.svc.start(c.id);
+    await waitForIdle(h, c.id);
+
+    expect(h.wa.sendText).toHaveBeenCalledTimes(1);
+    expect(h.messages[0].status).toBe('FAILED');
+    expect(h.messages[0].attemptCount).toBe(1);
+  });
+
+  it('14. does not retry a rate-limited send before the provider Retry-After elapses', async () => {
+    const c = campaign({ throttleMs: 5 });
+    let sends = 0;
+    const h = harness({
+      campaigns: [c],
+      messages: [message(c.id)],
+      customers: [customer('cu1')],
+      send: async () => {
+        sends += 1;
+        if (sends === 1) {
+          return {
+            ok: false,
+            error: {
+              httpStatus: 429,
+              kind: 'rate_limited',
+              retryable: true,
+              retryAfterMs: 120,
+              message: 'Rate limit reached',
+            },
+          };
+        }
+        return { ok: true, whatsappId: 'wam-1' };
+      },
+    });
+
+    await h.svc.start(c.id);
+    await waitForIdle(h, c.id);
+
+    expect(h.wa.sendText).toHaveBeenCalledTimes(2);
+    const gap = h.sendTimes[1] - h.sendTimes[0];
+    // The provider's 120ms Retry-After dominates the 5ms campaign throttle.
+    expect(gap).toBeGreaterThanOrEqual(100);
+    expect(gap).toBeLessThan(1000);
+    expect(h.messages[0].status).toBe('SENT');
+    expect(h.messages[0].attemptCount).toBe(2);
+  });
+});
+
 describe('throttling', () => {
   it('waits the campaign throttle between sends but not after the final one', async () => {
     const throttleMs = 150;
