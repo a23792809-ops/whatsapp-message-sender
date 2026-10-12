@@ -1,0 +1,49 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  test:
+    name: Lint, Test, and Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+
+      - name: Install dependencies
+        # The backend needs no database or runtime credentials: the unit suite
+        # uses an in-memory ORM and mocked HTTP, so `npm ci` can boot it all
+        # from the committed lockfile.
+        run: npm ci
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run automated tests
+        run: npm test
+
+      - name: Run production build
+        run: npm run build

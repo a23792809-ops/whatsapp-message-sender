@@ -245,7 +245,7 @@ Open `http://localhost:3000`. The frontend talks to the backend at `http://local
 **Current integration limits** (important — see roadmap):
 - Only **`type: text`** and **`type: template`** messages are sent. Meta requires approved **message templates** for outbound traffic outside the 24‑hour customer service window.
 - Delivery and read **webhooks are implemented** (`/webhooks/whatsapp`), so `SENT → DELIVERED → READ` is tracked from Meta's callbacks; inbound replies are acknowledged but not yet processed.
-- The send endpoint has **no per‑request timeout tuning, backoff, or Meta rate‑limit awareness** yet — a campaign relies on its own throttle and retry budget.
+- Each send is bounded by a **per‑request timeout** (`WHATSAPP_REQUEST_TIMEOUT_MS`, default 15s): a hung Meta connection cannot stall the campaign runner. Send failures are **classified**: permanent rejections (bad recipient, bad credentials) and ambiguous timeouts/network drops are **not auto‑retried** (a timed‑out request may already have been accepted, so re‑sending could deliver it twice), while `429` rate‑limits and 5xx are retried with the campaign throttle and the provider's `Retry‑After` backoff.
 - Authentication protects the API via a global guard; the only unauthenticated routes are root, health, auth, and the two webhook routes.
 
 ---
@@ -477,6 +477,11 @@ not contact the backend, Meta, OpenAI or DeepSeek. The GitHub Actions workflow
 `.github/workflows/frontend-ci.yml` installs with `npm ci` and runs lint, tests
 and the production build for changes under `frontend/`.
 
+The backend has the same guard: `.github/workflows/backend-ci.yml` installs with
+`npm ci` and runs oxlint, the Vitest suite (which uses an in-memory ORM and
+mocked HTTP, so it needs no database) and `nest build` for changes under
+`backend/`.
+
 ### Production startup
 
 ```bash
@@ -517,7 +522,7 @@ baked in, so it must be built with the production API URL, not at runtime.
 - **WhatsApp** — `text`‑only sends, no Meta message templates (see section 11).
 - **Inbound messages are not handled** — the webhook accepts and acknowledges them, but replies are not automated. See section 13.
 - **Settings UI** — values are persisted and served by the API, but the settings page does not yet edit them.
-- **Test coverage** — backend unit and API e2e suites exist and pass; the frontend now has an automated Vitest + React Testing Library suite (section 15) that is run by GitHub Actions on every frontend change.
+- **Test coverage** — backend unit and API e2e suites exist and pass; the frontend has an automated Vitest + React Testing Library suite (section 15). GitHub Actions runs lint, tests and builds for **both** the frontend (`.github/workflows/frontend-ci.yml`) and the backend (`.github/workflows/backend-ci.yml`) on every change.
 
 **Planned roadmap (priority order)**
 
@@ -531,7 +536,7 @@ baked in, so it must be built with the production API URL, not at runtime.
 8. ✔ Audit logging *(done — see section 13)*
 9. ✔ AI assistant (OpenAI + DeepSeek), review‑gated, with `/ai` UI *(done — see section 12)*; upcoming: approve‑to‑template flow
 10. ✔ Persistent settings *(done — see section 13)*
-11. ✔ Automated tests — backend service + API e2e, plus frontend Vitest/React Testing Library with CI *(done — see section 15)*
+11. ✔ Automated tests — backend service + API e2e, plus frontend Vitest/React Testing Library with GitHub Actions CI for both packages *(done — see section 15)*
 12. Production deployment prep (Docker/CI/env)
 13. Final end‑to‑end verification
 
