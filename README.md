@@ -518,7 +518,7 @@ baked in, so it must be built with the production API URL, not at runtime.
 
 - **Single shared admin account** — authentication is enabled and every endpoint is guarded, but there is one shared credential pair, so actions cannot be attributed to an individual person and there is no role separation.
 - **Campaign runner is in‑process** — campaigns left `RUNNING` by a crash are re‑adopted on the next boot, but a runner does not survive a restart mid‑send, so a message can be re‑attempted after recovery.
-- **Scaling** — customer lists still load rows into memory before filtering/paginating; message history, audit history and dashboard aggregates are now paginated/aggregated in the database.
+- **Scaling** — customer lists, message history, audit history and dashboard aggregates are all paginated/aggregated in the database (search, filtering and sorting for customers are pushed into the ORM query layer and the React UI pages through them); the campaign runner picks one message at a time, so normal paths never load a whole table into memory.
 - **WhatsApp** — `text`‑only sends, no Meta message templates (see section 11).
 - **Inbound messages are not handled** — the webhook accepts and acknowledges them, but replies are not automated. See section 13.
 - **Settings UI** — values are persisted and served by the API, but the settings page does not yet edit them.
