@@ -1,6 +1,7 @@
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import type { Request, Response, NextFunction } from 'express';
@@ -19,7 +20,7 @@ async function bootstrap() {
   // 413, Meta retries it forever, and those delivery statuses are silently
   // never recorded. `useBodyParser` re-applies Nest's own rawBody verify hook,
   // so signature verification is unaffected by the custom limit.
-  const app = await NestFactory.create(AppModule, { rawBody: true, bodyParser: false });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, bodyParser: false });
   const config = app.get(ConfigService);
   const logger = new Logger('HTTP');
 
