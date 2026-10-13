@@ -122,7 +122,8 @@ export class AuthService {
     }
     const iat = Math.floor(Date.now() / 1000);
     const exp = iat + this.sessionHours * 3600;
-    const payload: SessionPayload = { sub: 'admin', username, iat, exp };
+    const safeUsername = username.length > 128 ? username.slice(0, 128) : username;
+    const payload: SessionPayload = { sub: 'admin', username: safeUsername, iat, exp };
     return { token: this.sign(payload), expiresAt: exp * 1000 };
   }
 
