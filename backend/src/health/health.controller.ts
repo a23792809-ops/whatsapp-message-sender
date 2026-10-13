@@ -36,4 +36,12 @@ export class HealthController {
       },
     };
   }
+
+  @Public()
+  @Get('ready')
+  async ready() {
+    // Lightweight readiness check; confirms app is initialized.
+    return { status: 'ok', ready: true, timestamp: new Date().toISOString() };
+  }
+  }
 }
