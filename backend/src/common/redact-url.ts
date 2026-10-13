@@ -25,6 +25,8 @@ const SENSITIVE_QUERY_PARAMS = [
   'api_key',
   'apikey',
   'authorization',
+  'session',
+  'bg_session',
 ];
 
 /**
