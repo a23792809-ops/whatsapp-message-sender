@@ -44,8 +44,12 @@ export class CustomersService {
     }
     if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
       const wb = new ExcelJS.Workbook();
-      const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-      await wb.xlsx.load(ab);
+      try {
+        const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+        await wb.xlsx.load(ab);
+      } catch {
+        await wb.xlsx.load(buffer as unknown as any);
+      }
       const ws = wb.worksheets[0];
       const headers: string[] = [];
       ws.getRow(1).eachCell((cell, col) => {
@@ -56,7 +60,11 @@ export class CustomersService {
         if (rowNum === 1) return;
         const obj: ParsedRow = {};
         headers.forEach((h, col) => {
-          if (h) obj[h] = row.getCell(col).value;
+          if (h) {
+            const cell = row.getCell(col);
+            const v = cell.value;
+            obj[h] = v;
+          }
         });
         rows.push(obj);
       });
@@ -85,7 +93,15 @@ export class CustomersService {
         .replace(/[^a-zA-Z0-9_]/g, '');
 
       if (!key) continue;
-      const value = rawValue === undefined || rawValue === null ? '' : String(rawValue).trim();
+      let value = '';
+      if (rawValue !== undefined && rawValue !== null) {
+        if (typeof rawValue === 'object') {
+          try { value = JSON.stringify(rawValue); } catch { value = String(rawValue); }
+        } else {
+          value = String(rawValue);
+        }
+        value = value.trim();
+      }
       if (value !== '') variables[key] = value;
     }
     return variables;
