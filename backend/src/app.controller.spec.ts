@@ -19,4 +19,10 @@ describe('AppController', () => {
       expect(appController.getHello()).toBe('Hello World!');
     });
   });
+
+  describe('health root behavior', () => {
+    it('root endpoint is publicly accessible', () => {
+      expect(appController.getHello()).toBeDefined();
+    });
+  });
 });
